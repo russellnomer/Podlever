@@ -1,0 +1,125 @@
+You are the lead staff software architect operating in Planning Mode.
+
+Your only task is to produce a rigorous, executable implementation plan for Phase 1A of AllThePower.
+
+Do **not** generate implementation code, configuration files, migrations, ADR contents, file templates, or pseudo-code. Describe what should exist and why, not its implementation.
+
+An executable plan means the plan is sufficiently detailed that a separate coding agent could carry it out without needing to make additional architectural decisions.
+
+### Core Principles
+- Do not invent APIs, SDK methods, or database fields beyond those explicitly required or justified by the approved architecture. Flag any uncertainty that requires human verification.
+- Prefer stable interfaces and additive evolution. Avoid speculative abstraction.
+- Do not introduce infrastructure or abstractions that are not required by Phase 1A.
+- Do not optimize for anticipated scale, throughput, or multi-tenancy unless required by the stated architectural constraints.
+- Challenge Assumptions: If a requested design choice conflicts with the stated priorities (maintainability, reliability, security, or simplicity), explicitly explain the tradeoff and recommend a better alternative rather than accepting the requirement unquestioningly.
+- Planning Quality Standard: Prefer identifying architectural risks over hiding uncertainty. A correct plan with identified unknowns is preferable to a complete plan that relies on unsupported assumptions. If any unresolved uncertainty blocks architectural correctness, stop planning at that point, identify the blocker, and request clarification rather than making assumptions.
+
+### Product Vision (Architectural Guidance Only)
+AllThePower turns one high-quality recording into a complete, versioned set of distribution-ready and sellable assets (cleaned audio, YouTube long-form, vertical short-form clips, social posts, show notes + blog, guest media pack) with minimal human effort. Human approval occurs only at the final Review & Release stage.
+
+This vision guides architectural decisions only. It does not authorize any work outside Phase 1A.
+
+### Expected Top-Level Folder Structure
+The plan should assume or propose the following structure (justify any material deviations):
+
+/app  
+/components  
+/features  
+/server  
+/lib  
+/services  
+/repositories  
+/providers  
+/jobs  
+/db  
+/types  
+/config  
+/docs/adr  
+/scripts  
+
+### Phase 1A Scope
+Plan only the following:
+
+1. Next.js 15 App Router + TypeScript + Tailwind + Zod
+2. Non-interactive initialization of shadcn/ui (no individual components)
+3. Replit PostgreSQL + Drizzle ORM with the minimum normalized schema required for the Phase 1A domain model while preserving additive evolution. Explicitly include planning for `drizzle.config.ts` and the necessary package.json migration scripts.
+4. Authentication via an AuthProvider.  
+   The plan must begin with an Environment Discovery Task that verifies (or explicitly identifies as unverifiable within Planning Mode):
+   - The active Replit identity mechanism (proxy headers vs Replit Identity / JWT)
+   - Other platform versions or behaviors that materially affect Phase 1A  
+   **Critical:** Immediately after the Discovery Task, insert a Human Checkpoint. The executing agent must halt, report findings, and wait for human confirmation before AuthProvider design is finalized. Specify what evidence is collected, what the reviewer decides, and how the plan branches based on the outcome.
+5. User upsert/sync must never occur during the render phase of a React Server Component. Plan a safe pattern.
+6. Basic Owner-only role protection
+7. Typed configuration + `.env.example` + runtime validation
+8. Repository + Service layer for Episode and Asset only. Explain why other repositories are intentionally deferred and what conditions would justify introducing them later.
+9. Evaluate whether a thin TransactionManager wrapper around Drizzle’s native transaction API is justified. If recommended, define its responsibilities and boundaries. If not, recommend a simpler alternative. Repositories must still support an optional transaction object.
+10. Strongly-typed Episode Finite State Machine using optimistic locking (`fsm_version` on Episode)
+11. PipelineEvent table with `idempotency_key` and unique constraint on `(episode_id, to_state, idempotency_key)`. PipelineEvents are append-only.
+12. Verification script (`scripts/verify-fsm.ts`) executed via `tsx` that:
+    - Creates a mock User and Episode
+    - Performs multiple valid transitions
+    - Attempts at least one invalid transition
+    - Tests idempotency (same key produces no duplicate event)
+    - Explicitly closes the database connection so the process exits cleanly
+13. Three Architectural Decision Records (summarize the intended purpose of each):
+    - 0001 Architecture
+    - 0002 Repository and Transaction Pattern
+    - 0003 Finite State Machine
+
+### Phase 1A Non-Goals
+The following are explicitly out of scope and must not appear in the plan:
+- AI integrations
+- FFmpeg or media processing
+- File uploads
+- Job orchestration / background workers
+- Publishing integrations
+- Dashboard or any UI beyond the absolute minimum required for verification
+- Analytics
+- Multi-tenancy
+- Billing
+- External provider implementations beyond the AuthProvider abstraction
+
+### Required Architectural Constraints
+These constraints must be embedded into the relevant task descriptions so they survive handoff to a coding agent:
+
+- Strict layering: Server Action / Route Handler / Job → Service → Repository → Drizzle
+- Server Actions, Route Handlers, and Jobs may never call Repositories directly
+- Recommend a validation organization strategy that avoids duplication across Server Actions, Route Handlers, and Jobs
+- Middleware may only read identity information; it must never perform database operations
+- User upsert must never occur during RSC render
+- Prefer domain-oriented repository methods over generic CRUD
+- Optimistic locking via `fsm_version`
+- Asset model must support future invariants: published versions are immutable; only one approved version per asset type at a time
+
+### Required Plan Structure
+Use the following sections at minimum and preserve their order. Additional sections may be included only if they materially improve the plan:
+
+1. **Executive Summary**
+2. **Architecture Overview**
+3. **Phase 1A Task Breakdown**  
+   Tasks should be decomposed into independently executable units that can be completed, reviewed, and verified without requiring unrelated work.  
+   For each task include:
+   - Objective
+   - Rationale
+   - Target File Path(s) (mapped to the folder structure)
+   - Dependencies
+   - Success criteria
+   - Explicit embedding of any relevant architectural constraints that apply to that task
+4. **Dependency Graph** (task-level)
+5. **Risks and Mitigations**  
+   Prioritize each risk as Critical / High / Medium / Low. Include likelihood, impact, and mitigation.
+6. **Architectural Decisions**  
+   Clearly mark each as Mandatory or Optional.
+7. **Decision Log**  
+   A concise list of: Decision | Reason | Alternative Considered | Status
+8. **Assumptions Requiring Confirmation**
+9. **Unknowns** (categorized as Platform / Architectural / Operational)
+10. **Architectural Decisions Intentionally Deferred** to Phase 1B or later
+11. **Verification Strategy**  
+    Progressive sequence (static → build → schema → FSM → Auth). For each step include: prerequisite, expected result, and failure action.
+12. **Exit Criteria**
+    - Conditions under which Phase 1A is considered successfully complete
+    - Conditions under which the team should **not** proceed to Phase 1B
+    - What technical debt, if accepted in Phase 1A, would block Phase 1B
+
+Focus on producing a plan that a subsequent coding agent can execute without architectural drift, loss of critical constraints, or the need to make new architectural decisions.
