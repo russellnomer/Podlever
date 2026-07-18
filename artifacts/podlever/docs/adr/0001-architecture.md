@@ -72,7 +72,37 @@ Initialized non-interactively via `components.json` in Phase 1A. No components i
 Next.js 15 reads `process.env.PORT` automatically. Dev script: `next dev -p ${PORT:-3000} -H 0.0.0.0`. The `-H 0.0.0.0` flag is required for the Replit proxied preview iframe to reach the server.
 
 ### Proxy Routing Conflict
-The workspace's shared path-based proxy routes `/api/*` to the `api-server` artifact (port 8080). PodLever's own Route Handlers must NOT use `/api/` as a path prefix in Phase 1A to avoid routing conflicts. **Decision: PodLever uses Next.js Server Actions exclusively for mutations in Phase 1A; Route Handlers use `/rpc/` prefix if needed.**
+
+**Status:** Decided — 2026-07-18
+
+**Context:**
+The workspace shared path-based proxy routes `/api/*` to the `api-server` artifact (Express, port 8080). Any Next.js Route Handler placed under `app/api/` would be silently swallowed by the proxy and never reach the PodLever server.
+
+Phase 1A avoided the conflict entirely by using only Server Actions for mutations and placing the three auth routes under `/auth/`. Phase 1B requires Route Handlers that cannot be Server Actions: Stripe webhook receiver (must be a raw POST endpoint for signature verification), job status polling (SSE or long-poll), and file upload (multipart form, too large for a Server Action).
+
+**Three options considered:**
+
+| Option | Description | Verdict |
+|--------|-------------|---------|
+| **A. Move PodLever to root path** | Reconfigure the Replit proxy so PodLever owns `/` and `api-server` moves to `/api-server/`. Eliminates the conflict permanently. | Rejected — requires workspace-wide proxy reconfiguration that affects all other artifacts; high disruption, high risk of breaking existing integrations. |
+| **B. Server Actions only (Phase 1B restriction)** | Prohibit all Route Handlers. Implement webhooks via Server Actions + Stripe CLI forwarding in dev; polling via React Server Component revalidation. | Rejected — Stripe webhooks cannot be received by Server Actions (no raw body access, wrong signature verification surface). Job polling via full-page revalidation is wasteful. The constraint would distort the architecture permanently. |
+| **C. `/rpc/` prefix for all PodLever Route Handlers** | PodLever's Route Handlers live at `/rpc/*` instead of `/api/*`. The proxy only intercepts `/api/*`, so `/rpc/*` routes reach Next.js directly. Auth routes remain at `/auth/`. | **Selected.** Least disruptive, no workspace-wide changes, immediately unblocks Phase 1B. Semantically clear: `/rpc/` signals "PodLever internal endpoint" vs. the shared `/api/` layer. |
+
+**Decision: All PodLever Route Handlers use the `/rpc/` path prefix.**
+
+```
+/auth/login        ← OIDC initiation (existing, Phase 1A)
+/auth/callback     ← OIDC token exchange (existing, Phase 1A)
+/auth/logout       ← Session destroy (existing, Phase 1A)
+/rpc/billing/*     ← Stripe webhooks + checkout (Phase 1B)
+/rpc/upload/*      ← File upload endpoints (Phase 1B)
+/rpc/jobs/*        ← Job status polling / SSE (Phase 1B)
+```
+
+**Enforcement:**
+- `app/api/` directory is intentionally empty. A `README.md` inside it explains the constraint. No `route.ts` file may ever be created inside `app/api/`.
+- All new Route Handler code reviews must confirm the path prefix is `/rpc/`, not `/api/`.
+- Comments in `app/auth/login/route.ts`, `providers/auth.ts`, and `app/layout.tsx` already document this constraint inline.
 
 ### Identity Headers
 No Replit identity headers (`X-Replit-User-Id`, `X-Replit-Identity`) are injected in the development environment. `REPLIT_USERID=19531679` and `REPLIT_USER=RussellNomer` are present as process-level environment variables but are NOT per-request — not usable as auth. **T3 checkpoint decision required for the auth mechanism (see ADR-0003 once T3 clears).**

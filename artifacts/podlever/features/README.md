@@ -11,3 +11,5 @@ and below the service layer in the dependency hierarchy.
 - Feature modules may import from `/components`, `/lib`, and `/types`.
 - Feature modules may NOT import from `/services`, `/repositories`, or `/db` directly.
 - All data fetching in feature modules goes through Server Actions or Route Handlers.
+- Route Handlers called from feature modules must use the `/rpc/` prefix (never `/api/`).
+  See `app/api/README.md` and `docs/adr/0001-architecture.md` § "Proxy Routing Conflict".

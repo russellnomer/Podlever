@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.0-alpha.2] — 2026-07-18 — Proxy Routing Decision (Task #4)
+
+### Architecture Decision
+
+**Resolved: Proxy routing conflict — all PodLever Route Handlers use `/rpc/` prefix**
+
+Phase 1A avoided the Replit shared-proxy conflict (`/api/*` → `api-server`) by using Server Actions exclusively. Phase 1B needs Route Handlers that cannot be Server Actions: Stripe webhooks (raw body + signature), job polling, and file upload.
+
+Three options were evaluated:
+- Move PodLever to root path → rejected (workspace-wide disruption)
+- Server Actions only in Phase 1B → rejected (Stripe webhooks cannot use Server Actions)
+- **`/rpc/` prefix for all Route Handlers → selected** (least disruptive, no proxy reconfiguration)
+
+### Changed
+- `docs/adr/0001-architecture.md` — expanded "Proxy Routing Conflict" section with full decision record, options table, path convention, and enforcement rules
+- `app/api/README.md` — added guard-rail README explaining why no `route.ts` file may be created here, and where to put Route Handlers instead (`app/rpc/`)
+- `features/README.md` — added inline note that Route Handlers must use `/rpc/` prefix
+
+### Confirmed
+- **Zero existing Route Handlers under `app/api/`** — no conflict today. The `app/api/` directory is empty (placeholder only).
+- Auth routes remain at `/auth/` (pre-date this decision; correctly placed to avoid `/api/`).
+
+---
+
 ## [0.1.0-alpha.1] — 2026-07-18 — Phase 1A Security Audit Remediations (Task #6)
 
 ### Security

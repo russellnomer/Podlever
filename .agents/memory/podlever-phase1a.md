@@ -18,9 +18,13 @@ description: Key architectural decisions, quirks, and constraints for the PodLev
 - Services are context-agnostic: accept `ownerId: string` from caller, NOT from cookies
 - `getAuthUser()` in `providers/auth.ts` — use in Server Components for non-throwing auth check
 
-## Proxy Routing Conflict (T4 Task #4 pending)
+## Proxy Routing Conflict — RESOLVED
 - Workspace proxy routes `/api/*` to `api-server` artifact — PodLever's `/api/` routes unreachable via proxy
-- PodLever uses Server Actions only for mutations in Phase 1A (no Route Handlers except auth routes at `/auth/`)
+- **Decision (confirmed by Russell):** All PodLever Route Handlers use `/rpc/` prefix. Never `/api/`.
+- Auth routes remain at `/auth/` (pre-date decision; placed there to avoid conflict)
+- Phase 1B path map: `/rpc/billing/*` (Stripe), `/rpc/upload/*` (file upload), `/rpc/jobs/*` (polling/SSE)
+- `app/api/` directory intentionally empty; README.md inside it guards against accidental route creation
+- Full decision record in `docs/adr/0001-architecture.md` § "Proxy Routing Conflict"
 - OIDC discovery, `REPL_ID`, `REPLIT_DEV_DOMAIN` auto-injected by Replit in dev workspace
 
 ## FSM Design
