@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-18
- * Last modified: 2026-07-18 by agent (T6 — AuthProvider)
+ * Last modified: 2026-07-18 by agent (Task #7 — added per-IP rate limiting)
  *
  * Route: GET /auth/login
  * Path: /auth/ (not /api/) to avoid proxy routing conflict with api-server artifact
@@ -13,12 +13,14 @@
  * It is exempt from the "Server Actions only" rule which applies to data mutations.
  *
  * Flow:
- *   1. Generate cryptographically random PKCE code_verifier, state, and nonce
- *   2. Store them in a short-lived iron-session cookie (pkce_state, 10 min TTL)
- *   3. Build the OIDC authorization URL (with S256 code_challenge)
- *   4. Redirect the user to Replit's OIDC authorization endpoint
+ *   1. Extract client IP; enforce sliding-window rate limit (10 req/min)
+ *   2. Generate cryptographically random PKCE code_verifier, state, and nonce
+ *   3. Store them in a short-lived iron-session cookie (pkce_state, 10 min TTL)
+ *   4. Build the OIDC authorization URL (with S256 code_challenge)
+ *   5. Redirect the user to Replit's OIDC authorization endpoint
  *
  * Security:
+ *   - Rate limiting: 10 requests/minute per IP (sliding window, in-memory)
  *   - PKCE S256: prevents authorization code interception attacks
  *   - state: prevents CSRF
  *   - nonce: prevents ID token replay
@@ -29,9 +31,75 @@ import * as oidcClient from "openid-client";
 import { getIronSession } from "iron-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getOidcConfig, getCallbackUrl, getPkceStateOptions } from "@/providers/auth";
+import { SlidingWindowRateLimiter } from "@/lib/rate-limiter";
 import type { PkceState } from "@/providers/auth";
 
+// ─── Rate limiter ────────────────────────────────────────────────────────────
+
+/**
+ * loginRateLimiter — module-level singleton, shared across all requests in
+ * this Node.js process. State is intentionally in-memory: single-instance
+ * is the Phase 1B deployment model; state lost on restart is acceptable
+ * (limits reset, which is a minor degradation, not a security failure).
+ *
+ * Limit: 10 requests per IP per 60-second sliding window.
+ * Rationale: A legitimate user triggers this endpoint once per login session.
+ * 10 req/min provides headroom for browser retries while blocking floods.
+ */
+const loginRateLimiter = new SlidingWindowRateLimiter({
+  max:      10,
+  windowMs: 60_000, // 1 minute sliding window
+});
+
+// ─── Handler ─────────────────────────────────────────────────────────────────
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
+
+  // ── Step 1: Rate limit check ──────────────────────────────────────────────
+  //
+  // Extract the client IP from Replit's reverse-proxy headers and apply the
+  // sliding-window limit BEFORE touching the OIDC provider. This prevents
+  // repeated OIDC redirects from flooding Replit's authorization endpoint or
+  // generating noisy PKCE cookie churn.
+
+  const clientIp  = SlidingWindowRateLimiter.extractIp(request.headers);
+  const rateLimit = loginRateLimiter.check(clientIp);
+
+  if (!rateLimit.allowed) {
+    // Log at warn level so the owner can spot abuse patterns in workflow logs.
+    // No PII: only the (possibly spoofed) IP and the rate-limit state.
+    console.warn("[auth/login] rate limit exceeded", {
+      ip:        clientIp,
+      remaining: rateLimit.remaining,
+      resetAt:   new Date(rateLimit.resetAt).toISOString(),
+    });
+
+    // Retry-After: seconds until the oldest in-window hit expires.
+    const retryAfterSecs = Math.ceil((rateLimit.resetAt - Date.now()) / 1_000);
+
+    return new NextResponse(
+      `<html><body>
+        <h1>Too many sign-in attempts</h1>
+        <p>You have exceeded the sign-in rate limit. Please wait a moment and try again.</p>
+        <p><a href="/">← Back to home</a></p>
+      </body></html>`,
+      {
+        status:  429,
+        headers: {
+          "Content-Type":  "text/html",
+          // Standard HTTP header: tells clients/proxies how long to wait.
+          "Retry-After":   String(retryAfterSecs),
+          // Expose remaining/reset as informational headers (non-sensitive).
+          "X-RateLimit-Limit":     "10",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset":     String(rateLimit.resetAt),
+        },
+      },
+    );
+  }
+
+  // ── Step 2–5: Normal OIDC login flow ──────────────────────────────────────
+
   try {
     // Load Replit OIDC discovery config (memoized after first fetch)
     const config = await getOidcConfig();

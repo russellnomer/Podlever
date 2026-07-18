@@ -36,7 +36,7 @@ The automated scanners were supplemented with a manual architect review of the 7
 
 | # | Severity | Finding | Rationale | Phase 1B Action |
 |---|----------|---------|-----------|-----------------|
-| A1 | High | No rate limiting on `/auth/login` | Requires edge middleware or in-memory/Redis store not yet provisioned. Single-owner internal tool; not public-facing. | Implement IP-based sliding window before any multi-user or public exposure. |
+| ~~A1~~ | ~~High~~ | ~~No rate limiting on `/auth/login`~~ | **Closed — Task #7.** Per-IP sliding-window limiter (10 req/60 s) implemented in `lib/rate-limiter.ts`. 429 + `Retry-After` returned before any OIDC redirect. In-memory store (single-instance, acceptable for Phase 1B). | ✅ Implemented |
 | A2 | Medium | Several `process.env` reads in `providers/auth.ts` outside `config/index.ts` | `SESSION_SECRET`, `REPL_ID`, `REPLIT_DEV_DOMAIN`, `OIDC_CALLBACK_URL`, `REPLIT_DOMAINS` are read lazily at call time (not module load) by documented design. Reading them through `config` would force module-load evaluation. Exception list is documented in `config/index.ts`. | Revisit if config architecture changes in Phase 1B. |
 | A3 | Medium | Logout is GET (no CSRF protection) | Single-owner tool; logout CSRF has no meaningful attack surface when only one user can log in. | Convert to POST + CSRF token if multi-user support is added. |
 

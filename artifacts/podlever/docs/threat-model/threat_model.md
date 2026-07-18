@@ -137,7 +137,7 @@
 - Database connections MUST be pooled with a bounded max (currently `max: 5` in `db/index.ts`).
 - No unbounded query results — all list queries MUST have implicit owner-scoping that limits result set to one owner's episodes.
 
-**Current status:** ⚠️ **Partial.** DB pool bounded (max 5). `/auth/login` rate limiting is NOT implemented — documented as Phase 1B requirement. Acceptable for single-owner internal use; must be addressed before any multi-user or public exposure.
+**Current status:** ✅ Implemented. DB pool bounded (max 5). `/auth/login` rate limiting implemented: per-IP sliding-window (10 req/60 s) in `lib/rate-limiter.ts` (`SlidingWindowRateLimiter`); requests over the limit receive 429 with `Retry-After` header and are NOT forwarded to the OIDC provider. In-memory store (single-instance; state clears on restart — acceptable for Phase 1B single-instance deployment).
 
 ---
 
@@ -162,7 +162,7 @@
 
 | Risk | Severity | Rationale | Phase 1B Action |
 |------|----------|-----------|-----------------|
-| No rate limiting on `/auth/login` | High | Single-owner internal tool; Replit workspace access is already gated. Not public-facing. | Add IP/session sliding-window rate limiting before any multi-user or public exposure. |
+| ~~No rate limiting on `/auth/login`~~ | ~~High~~ | **Closed — Task #7.** Per-IP sliding-window rate limit (10 req/60 s) implemented in `lib/rate-limiter.ts`. 429 returned before OIDC redirect. | ✅ Done |
 | GET-based logout (no CSRF token) | Medium | Single-owner; logout CSRF not meaningful when only one user can log in. | Convert to POST + Server Action with CSRF token if multi-user is ever added. |
 | Role cached in session (no per-request DB check) | Low | Role changes require re-login. Acceptable for single owner. | Add session invalidation mechanism if team roles are introduced in Phase 1B+. |
 | OIDC end-session not implemented | Low | Replit account stays logged in; only PodLever session is cleared. Acceptable for Phase 1A. | Implement OIDC RP-initiated logout if session revocation is needed. |

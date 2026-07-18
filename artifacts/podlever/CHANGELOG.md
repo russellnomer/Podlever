@@ -147,6 +147,27 @@ pnpm --filter @workspace/podlever run verify-fsm →  28/28 assertions passed
 
 ---
 
+## [0.1.0-alpha.2] — 2026-07-18 — Login Rate Limiting (Task #7)
+
+### Security
+
+- **Fixed [High]:** `/auth/login` now enforces a per-IP sliding-window rate limit (10 requests/60-second window) before initiating any OIDC redirect. Requests over the limit receive a `429 Too Many Requests` response with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers. The OIDC provider is never contacted for over-limit requests.
+- Added `lib/rate-limiter.ts` — `SlidingWindowRateLimiter` class with in-memory Map-backed sliding-window store, periodic stale-entry cleanup (5-min interval, `unref()`'d), and `extractIp()` static helper (respects `x-forwarded-for` and `x-real-ip` for Replit's reverse proxy).
+- Rate-limit state is in-memory (single-instance); state clears on process restart. Acceptable for Phase 1B single-instance deployment. Redis upgrade path is documented in `lib/rate-limiter.ts`.
+
+### Docs
+
+- `docs/threat-model/threat_model.md` — Denial of Service section updated to ✅ Implemented; accepted-risk row for `/auth/login` rate limiting closed.
+- `docs/audit/security-scan.md` — A1 accepted-risk row closed; marked as implemented.
+
+### Validated
+
+```
+pnpm --filter @workspace/podlever run typecheck  →  0 errors
+```
+
+---
+
 ## [Unreleased]
 
-_Phase 1A complete. Pending: Task #3 (remove diagnostic route), Task #4 (proxy routing), Phase 1B pipeline._
+_Phase 1B pending: Task #2 (real episode pipeline), Task #4 (proxy routing), Task #5 (stub removal)._
