@@ -56,7 +56,10 @@ export default async function Home() {
     const episodes = await episodeRepository.listEpisodesForOwner(user.userId);
     episodeCount = episodes.length;
   } catch (err) {
-    dbError = (err as Error).message;
+    // Log the raw error server-side for debugging; surface only a generic message
+    // to the client — never expose internal DB error details to the UI.
+    console.error("[page] DB connectivity check failed:", (err as Error).message);
+    dbError = "Database connectivity check failed — check server logs.";
   }
 
   return (

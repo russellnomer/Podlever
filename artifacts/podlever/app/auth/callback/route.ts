@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-18
- * Last modified: 2026-07-18 by agent (T6 — AuthProvider)
+ * Last modified: 2026-07-18 by agent (Task #6 — audit: PKCE fix, env centralization)
  *
  * Route: GET /auth/callback
  * OIDC redirect_uri: https://{REPLIT_DEV_DOMAIN}/auth/callback
@@ -20,7 +20,7 @@
  *   5. Assign role: "owner" if Replit user ID matches OWNER_REPLIT_USER_ID env var;
  *      "user" otherwise
  *   6. Write the main iron-session cookie with the user's DB ID, role, display name
- *   7. Clear the ephemeral PKCE cookie
+ *   7. Destroy the ephemeral PKCE cookie (explicit path match to ensure browser deletes)
  *   8. Redirect to the application home page
  *
  * Security:
@@ -28,6 +28,10 @@
  *     audience, nonce, expiration, state. Never trust claims without this call.
  *   - PKCE code_verifier is transmitted server-to-server; never exposed to client.
  *   - If PKCE cookie is missing or tampered (iron-session decrypt fails), abort.
+ *   - PKCE cookie is deleted with explicit path: "/auth" to ensure the browser
+ *     correctly removes the scoped cookie (path mismatch = silent no-op in browsers).
+ *   - Owner identity read via getOwnerReplitUserId() (providers/auth.ts) — no direct
+ *     process.env access in this file.
  *   - Logs authentication events (user ID, role, timestamp) for SOC compliance.
  *     No PII (display name, email) in logs.
  *
@@ -46,6 +50,7 @@ import {
   getCallbackUrl,
   getSessionOptions,
   getPkceStateOptions,
+  getOwnerReplitUserId,
 } from "@/providers/auth";
 import type { PodLeverSession, PkceState } from "@/providers/auth";
 
@@ -101,10 +106,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   );
 
   // ── Step 4: Determine role ────────────────────────────────────────────────────
-  const ownerReplitUserId =
-    process.env.OWNER_REPLIT_USER_ID ??
-    process.env.REPLIT_USERID ??
-    "";
+  // Use the centralized helper — do NOT read process.env directly in this file.
+  const ownerReplitUserId = getOwnerReplitUserId();
 
   // Only "owner" and "user" are valid per the userRoleEnum in db/schema/users.ts
   const role = replitUserId === ownerReplitUserId ? ("owner" as const) : ("user" as const);
@@ -160,8 +163,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   session.role         = role;
   await session.save();
 
-  // Clear the ephemeral PKCE cookie
-  response.cookies.delete("podlever_pkce");
+  // ── Step 8: Destroy the ephemeral PKCE cookie ─────────────────────────────────
+  // IMPORTANT: The PKCE cookie was set with path: "/auth".
+  // A cookie deletion MUST specify the same path — without it, the browser sees a
+  // different-scoped cookie and ignores the deletion (silent no-op).
+  // We set maxAge=0 and value="" with the explicit /auth path to force removal.
+  response.cookies.set("podlever_pkce", "", {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge:   0,
+    path:     "/auth", // Must match the original Set-Cookie path
+  });
 
   return response;
 }

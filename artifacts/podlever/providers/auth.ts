@@ -211,6 +211,26 @@ export async function getOidcConfig(): Promise<Configuration> {
 }
 
 /**
+ * getOwnerReplitUserId — Return the Replit user ID of the authorized owner.
+ *
+ * Resolution priority:
+ *   1. OWNER_REPLIT_USER_ID — explicit override (set in Replit Secrets for multi-owner clarity)
+ *   2. REPLIT_USERID        — auto-injected by Replit workspace (dev only)
+ *
+ * Exported so that only providers/ layer reads these env vars; route handlers
+ * must call this function rather than reading process.env directly.
+ *
+ * @returns The owner's Replit numeric user ID string, or "" if not configured
+ */
+export function getOwnerReplitUserId(): string {
+  return (
+    process.env.OWNER_REPLIT_USER_ID ??
+    process.env.REPLIT_USERID ??
+    ""
+  );
+}
+
+/**
  * getCallbackUrl — Build the OIDC callback URL for this environment.
  *
  * Resolution priority (first non-empty value wins):

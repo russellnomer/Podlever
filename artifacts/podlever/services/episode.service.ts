@@ -127,8 +127,11 @@ export class EpisodeService {
 
     // Delegate the atomic write to the FSM executor.
     // fromState is authoritative from the DB fetch above.
+    // ownerId is passed for defense-in-depth: the executor's SQL WHERE includes
+    // AND owner_id = ownerId, preventing any bypass of the service-layer auth check.
     return executeTransition({
       episodeId:         input.episodeId,
+      ownerId,
       fromState:         episode.state,
       currentFsmVersion: input.currentFsmVersion,
       toState:           input.toState,

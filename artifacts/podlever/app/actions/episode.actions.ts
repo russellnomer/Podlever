@@ -30,10 +30,14 @@
 
 "use server";
 
+import { z } from "zod";
 import { requireOwner } from "@/providers/owner-guard";
 import { episodeService } from "@/services";
 import type { Episode } from "@/db/schema";
 import type { TransitionResult } from "@/server/fsm";
+
+/** Reusable UUID validator for episodeId parameters */
+const EpisodeIdSchema = z.string().uuid("episodeId must be a valid UUID");
 
 /**
  * createEpisodeAction — Create a new episode in draft state.
@@ -69,7 +73,10 @@ export async function listEpisodesAction(): Promise<Episode[]> {
  */
 export async function getEpisodeAction(episodeId: string): Promise<Episode> {
   const { userId } = await requireOwner();
-  return episodeService.getEpisode(episodeId, userId);
+  // Validate UUID format before passing to the DB layer — prevents malformed UUIDs
+  // from reaching PostgreSQL and leaking DB error details to the caller.
+  const validatedId = EpisodeIdSchema.parse(episodeId);
+  return episodeService.getEpisode(validatedId, userId);
 }
 
 /**

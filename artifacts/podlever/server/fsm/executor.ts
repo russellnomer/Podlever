@@ -51,6 +51,15 @@ import type { Episode } from "@/db/schema";
 
 export type ExecuteTransitionInput = {
   episodeId:         string;
+  /**
+   * Defense-in-depth: when provided, all episode SELECT and UPDATE queries include
+   * an AND owner_id = ownerId predicate so a stale/leaked episodeId cannot be
+   * transitioned by any entry point that bypasses the service-layer ownership check.
+   *
+   * Optional for backward compatibility with the verify-fsm script (which already
+   * scopes to its own fixture user). Always provide from EpisodeService.
+   */
+  ownerId?:          string;
   fromState:         EpisodeState;  // current DB state (supplied by caller from their fetch)
   currentFsmVersion: number;         // OCC guard — must match DB for fresh transitions
   toState:           EpisodeState;  // requested target state
@@ -75,7 +84,12 @@ export type TransitionResult = {
 export async function executeTransition(
   input: ExecuteTransitionInput,
 ): Promise<TransitionResult> {
-  const { episodeId, fromState, currentFsmVersion, toState, idempotencyKey, metadata } = input;
+  const { episodeId, ownerId, fromState, currentFsmVersion, toState, idempotencyKey, metadata } = input;
+
+  // Build owner-scoped episode condition (defense-in-depth when ownerId is provided)
+  const episodeCondition = ownerId
+    ? and(eq(episodes.id, episodeId), eq(episodes.ownerId, ownerId))
+    : eq(episodes.id, episodeId);
 
   return db.transaction(async (tx) => {
 
@@ -103,10 +117,11 @@ export async function executeTransition(
     if (existingEvent) {
       // Idempotent replay path — the work was already done.
       // Fetch and return the current episode state (no version bump, no writes).
+      // Use owner-scoped condition for defense-in-depth on the read.
       const [current] = await tx
         .select()
         .from(episodes)
-        .where(eq(episodes.id, episodeId))
+        .where(episodeCondition)
         .limit(1);
 
       if (!current) throw new EpisodeNotFoundError(episodeId);
@@ -139,7 +154,7 @@ export async function executeTransition(
       const [current] = await tx
         .select()
         .from(episodes)
-        .where(eq(episodes.id, episodeId))
+        .where(episodeCondition)
         .limit(1);
 
       if (!current) throw new EpisodeNotFoundError(episodeId);
@@ -147,8 +162,9 @@ export async function executeTransition(
     }
 
     // ── Step 4: UPDATE episodes with OCC guard (fresh transition only) ──────────
-    // WHERE id = episodeId AND fsm_version = currentFsmVersion
-    // 0 rows updated → version mismatch (concurrent write) → OptimisticLockError
+    // WHERE id = episodeId [AND owner_id = ownerId] AND fsm_version = currentFsmVersion
+    // ownerId predicate adds defense-in-depth: only the owning user's episodes can transition.
+    // 0 rows updated → version mismatch OR wrong owner → OptimisticLockError
     // Transaction rolls back: the INSERT above is also rolled back; key not consumed.
     const [updatedEpisode] = await tx
       .update(episodes)
@@ -159,7 +175,7 @@ export async function executeTransition(
       })
       .where(
         and(
-          eq(episodes.id, episodeId),
+          episodeCondition,
           eq(episodes.fsmVersion, currentFsmVersion),
         ),
       )

@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.0-alpha.1] — 2026-07-18 — Phase 1A Security Audit Remediations (Task #6)
+
+### Security
+
+**Automated scan results:** All three scanners (dependency audit, SAST, HoundDog) returned zero findings.
+
+**Architect review remediations:**
+
+- **Fixed [High]:** PKCE cookie deletion now specifies `path: "/auth"` explicitly via `response.cookies.set(...)` with `maxAge: 0` — previously using `response.cookies.delete()` omitted the path, causing browsers to silently ignore the deletion.
+- **Fixed [High]:** `app/auth/callback/route.ts` no longer reads `process.env.OWNER_REPLIT_USER_ID` / `REPLIT_USERID` directly. Reads now go through `getOwnerReplitUserId()` exported from `providers/auth.ts` (centralized, lazy-eval, single place to change).
+- **Fixed [High — defense-in-depth]:** FSM executor `executeTransition()` now accepts an optional `ownerId` parameter. When provided (always from `EpisodeService`), all episode SELECT and UPDATE queries include `AND owner_id = ownerId`, adding a second SQL-level ownership fence below the service-layer auth check.
+- **Fixed [Medium]:** `getEpisodeAction` now validates `episodeId` with `z.string().uuid()` before passing to the DB layer, preventing malformed UUIDs from reaching PostgreSQL and leaking driver error details.
+- **Fixed [Medium]:** `app/page.tsx` DB connectivity check now logs the raw error server-side and returns a generic `"Database connectivity check failed — check server logs."` string — no internal DB error details surfaced to the UI.
+
+**Documented accepted risks:**
+- `/auth/login` rate limiting deferred to Phase 1B (requires edge middleware / sliding-window store not yet provisioned; single-owner internal tool, not public-facing).
+- GET-based logout (no CSRF) and missing OIDC RP-initiated end-session deferred to Phase 1B.
+
+### Docs
+
+- Added `docs/threat-model/threat_model.md` — full STRIDE threat model covering OIDC/PKCE flow, iron-session cookie, owner guard, FSM executor, repository scoping, and trust boundaries.
+- Added `docs/audit/security-scan.md` — automated scan results, architect review findings table, remediation status, and accepted-risks register.
+
+### Validated
+
+```
+pnpm --filter @workspace/podlever run typecheck  →  0 errors
+pnpm --filter @workspace/podlever run verify-fsm →  28/28 assertions passed
+```
+
+---
+
 ## [0.1.0-alpha] — 2026-07-18 — Phase 1A Foundation
 
 ### Added
