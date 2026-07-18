@@ -1,0 +1,39 @@
+/**
+ * globals.css — Global styles and Tailwind CSS v4 theme for PodLever
+ *
+ * Part of: PodLever
+ * Created: 2026-07-18
+ * Last modified: 2026-07-18 by agent
+ *
+ * Tailwind v4 uses @import "tailwindcss" instead of @tailwind directives.
+ * CSS custom properties (--radius, --color-*) are the Tailwind v4 theme system.
+ * shadcn/ui components will use these variables when installed in later phases.
+ */
+
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
