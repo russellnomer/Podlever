@@ -1,0 +1,59 @@
+{
+  "last_updated": "2026-07-18",
+  "expires_after_days": 30,
+  "source_urls": [
+    "https://platform.openai.com/docs/pricing",
+    "https://www.anthropic.com/api",
+    "https://www.assemblyai.com/pricing",
+    "https://ai.google.dev/gemini-api/docs/pricing"
+  ],
+  "llm": {
+    "openai": {
+      "gpt-5.4-nano": { "input_per_mtok": 0.20,  "output_per_mtok": 1.25,  "notes": "cheapest OpenAI model Jul 2026" },
+      "gpt-5.4-mini": { "input_per_mtok": 0.75,  "output_per_mtok": 4.50  },
+      "gpt-5.6-luna": { "input_per_mtok": 1.00,  "output_per_mtok": 6.00  },
+      "gpt-5.5":      { "input_per_mtok": 5.00,  "output_per_mtok": 30.00 },
+      "gpt-5.5-pro":  { "input_per_mtok": 30.00, "output_per_mtok": 180.00 }
+    },
+    "anthropic": {
+      "haiku-4.5": {
+        "input_per_mtok": 1.00, "output_per_mtok": 5.00,
+        "cache_write_per_mtok": 1.25, "cache_read_per_mtok": 0.10
+      },
+      "sonnet-5": {
+        "input_per_mtok": 2.00, "output_per_mtok": 10.00,
+        "cache_write_per_mtok": 2.50, "cache_read_per_mtok": 0.20,
+        "notes": "introductory pricing until Aug 31 2026; rises to $3.00/$15.00 after"
+      },
+      "opus-4.8": {
+        "input_per_mtok": 5.00, "output_per_mtok": 25.00,
+        "cache_write_per_mtok": 6.25, "cache_read_per_mtok": 0.50
+      },
+      "fable-5": { "input_per_mtok": 10.00, "output_per_mtok": 50.00 }
+    },
+    "google": {
+      "gemini-3-flash": { "input_per_mtok": 0.75, "output_per_mtok": 4.50 },
+      "gemini-3":       { "input_per_mtok": 1.50, "output_per_mtok": 9.00 }
+    }
+  },
+  "transcription": {
+    "assemblyai-universal-2": {
+      "price_per_audio_hour": 0.02,
+      "notes": "standard pay-as-you-go; cheapest accurate option"
+    },
+    "assemblyai-universal-3-5-pro": {
+      "price_per_audio_hour": 0.08,
+      "notes": "estimated — base price not separately published; inferred from Medical Mode add-on data"
+    },
+    "openai-whisper-1": {
+      "price_per_minute": 0.006,
+      "price_per_audio_hour": 0.36,
+      "notes": "legacy model; still listed and available"
+    },
+    "openai-whisper-new": {
+      "price_per_minute": 0.003,
+      "price_per_audio_hour": 0.18,
+      "notes": "estimated for newer gpt-4o-audio class models per Jul 2026 search results"
+    }
+  }
+}
