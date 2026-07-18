@@ -1,0 +1,13 @@
+kind = "web"
+previewPath = "/"
+title = "PodLever"
+version = "1.0.0"
+id = "podlever-nextjs-app"
+
+[[services]]
+localPort = 3000
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/podlever run dev"

@@ -18,13 +18,16 @@ description: Key architectural decisions, quirks, and constraints for the PodLev
 - Services are context-agnostic: accept `ownerId: string` from caller, NOT from cookies
 - `getAuthUser()` in `providers/auth.ts` — use in Server Components for non-throwing auth check
 
-## Proxy Routing Conflict — RESOLVED
+## Proxy Routing Conflict — RESOLVED + VERIFIED
 - Workspace proxy routes `/api/*` to `api-server` artifact — PodLever's `/api/` routes unreachable via proxy
 - **Decision (confirmed by Russell):** All PodLever Route Handlers use `/rpc/` prefix. Never `/api/`.
 - Auth routes remain at `/auth/` (pre-date decision; placed there to avoid conflict)
 - Phase 1B path map: `/rpc/billing/*` (Stripe), `/rpc/upload/*` (file upload), `/rpc/jobs/*` (polling/SSE)
 - `app/api/` directory intentionally empty; README.md inside it guards against accidental route creation
 - Full decision record in `docs/adr/0001-architecture.md` § "Proxy Routing Conflict"
+- **Proxy registration:** `artifacts/podlever/.replit-artifact/artifact.toml` created; PodLever registered at `paths=["/"]`, `localPort=3000`. Proxy routes most-specific-first: `/api/*`→api-server, `/*`→PodLever.
+- **Verified:** `curl localhost:80/rpc/ping → 200 {"ok":true}` through proxy — api-server did NOT intercept `/rpc/` routes.
+- **Proxy curl rule:** Always use `localhost:80/<path>` for proxy-level testing, never `localhost:3000` (bypasses proxy). External dev domain also works but requires the artifact.toml to be registered.
 - OIDC discovery, `REPL_ID`, `REPLIT_DEV_DOMAIN` auto-injected by Replit in dev workspace
 
 ## FSM Design

@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.1.0-alpha.2] — 2026-07-18 — Proxy Routing Decision (Task #4)
+## [0.1.0-alpha.2] — 2026-07-18 — Proxy Routing Decision + Verification (Task #4)
 
 ### Architecture Decision
 
@@ -18,14 +18,26 @@ Three options were evaluated:
 - Server Actions only in Phase 1B → rejected (Stripe webhooks cannot use Server Actions)
 - **`/rpc/` prefix for all Route Handlers → selected** (least disruptive, no proxy reconfiguration)
 
+### Verified in Practice — 2026-07-18
+
+PodLever was registered with the Replit shared proxy at `paths = ["/"]` via `artifacts/podlever/.replit-artifact/artifact.toml`. A temporary `GET /rpc/ping` Route Handler was created at `app/rpc/ping/route.ts` and smoke-tested through the proxy:
+
+```
+curl localhost:80/rpc/ping
+→ 200 {"ok":true,"path":"/rpc/ping","timestamp":"2026-07-18T19:33:41.487Z"}
+```
+
+**Result:** HTTP 200 from Next.js through the shared proxy. The api-server intercept (`/api/*` only) did not capture the `/rpc/ping` request. Routes across artifacts are matched most-specific-first: `/api/*` → api-server (port 8080); `/*` → PodLever (port 3000). `/rpc/*` reaches Next.js as designed. Temporary route removed after verification.
+
 ### Changed
-- `docs/adr/0001-architecture.md` — expanded "Proxy Routing Conflict" section with full decision record, options table, path convention, and enforcement rules
+- `docs/adr/0001-architecture.md` — expanded "Proxy Routing Conflict" section with full decision record, options table, path convention, enforcement rules, and "Verified in practice" confirmation
 - `app/api/README.md` — added guard-rail README explaining why no `route.ts` file may be created here, and where to put Route Handlers instead (`app/rpc/`)
 - `features/README.md` — added inline note that Route Handlers must use `/rpc/` prefix
 
 ### Confirmed
 - **Zero existing Route Handlers under `app/api/`** — no conflict today. The `app/api/` directory is empty (placeholder only).
 - Auth routes remain at `/auth/` (pre-date this decision; correctly placed to avoid `/api/`).
+- `/rpc/*` routes reach Next.js — not intercepted by api-server. ✅
 
 ---
 

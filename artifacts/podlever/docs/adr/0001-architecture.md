@@ -90,6 +90,15 @@ Phase 1A avoided the conflict entirely by using only Server Actions for mutation
 
 **Decision: All PodLever Route Handlers use the `/rpc/` path prefix.**
 
+**Verified in practice — 2026-07-18:** A temporary `GET /rpc/ping` Route Handler was added and tested through the Replit shared proxy:
+
+```
+curl localhost:80/rpc/ping
+→ 200 {"ok":true,"path":"/rpc/ping","timestamp":"2026-07-18T19:33:41.487Z"}
+```
+
+The api-server proxy intercept (configured for `/api/*` paths only) did not intercept the `/rpc/ping` request. PodLever was registered with the proxy at `paths = ["/"]` via `artifacts/podlever/.replit-artifact/artifact.toml` as part of this verification. `/rpc/*` routes reach Next.js as designed. Smoke-test route removed after verification.
+
 ```
 /auth/login        ← OIDC initiation (existing, Phase 1A)
 /auth/callback     ← OIDC token exchange (existing, Phase 1A)
