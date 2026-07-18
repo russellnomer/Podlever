@@ -21,6 +21,7 @@
  */
 
 import {
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -80,6 +81,22 @@ export const users = pgTable("users", {
    * Phase 1A: always "owner" (single-user system).
    */
   role: userRoleEnum("role").notNull().default("owner"),
+
+  /**
+   * Session version counter — incremented at logout and on explicit revocation.
+   *
+   * Every iron-session cookie embeds the session_version value at login time.
+   * requireOwner() compares the cookie's embedded version against this column
+   * on every privileged request. A mismatch means the cookie was issued before
+   * the last logout or revocation event → UnauthorizedError thrown.
+   *
+   * Security invariant: incrementing this column instantly invalidates ALL active
+   * session cookies for this user, even unexpired and cryptographically valid ones.
+   * No need to wait for cookie maxAge to expire.
+   *
+   * Starts at 1. Incremented atomically via SQL `session_version + 1`.
+   */
+  sessionVersion: integer("session_version").notNull().default(1),
 
   /** Row creation timestamp. Set once; never updated. */
   createdAt: timestamp("created_at", { withTimezone: true })

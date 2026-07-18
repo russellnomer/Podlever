@@ -114,6 +114,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   // ── Step 5: Upsert user in DB (auth-sync — only write path for users table) ──
   let dbUserId: string;
+  let dbSessionVersion: number;
 
   try {
     const [upsertedUser] = await db
@@ -130,11 +131,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           displayName,
           role,
           updatedAt: new Date(),
+          // NOTE: session_version is NOT reset on login — only incremented at logout.
+          // Preserving the current value means a user who logs in again without
+          // logging out first retains the same version (no spurious invalidation).
         },
       })
-      .returning({ id: users.id });
+      .returning({ id: users.id, sessionVersion: users.sessionVersion });
 
-    dbUserId = upsertedUser!.id;
+    dbUserId        = upsertedUser!.id;
+    dbSessionVersion = upsertedUser!.sessionVersion;
   } catch (err) {
     console.error("[auth/callback] User upsert failed:", (err as Error).message);
     return NextResponse.redirect(new URL("/auth/login?error=db", request.url));
@@ -157,10 +162,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     response,
     getSessionOptions(),
   );
-  session.userId       = dbUserId;
-  session.replitUserId = replitUserId;
-  session.displayName  = displayName;
-  session.role         = role;
+  session.userId         = dbUserId;
+  session.replitUserId   = replitUserId;
+  session.displayName    = displayName;
+  session.role           = role;
+  // Embed the session version so requireOwner() can verify it against the DB
+  // on every privileged request. Logout increments the DB value, instantly
+  // revoking this cookie even if it is still unexpired.
+  session.sessionVersion = dbSessionVersion;
   await session.save();
 
   // ── Step 8: Destroy the ephemeral PKCE cookie ─────────────────────────────────

@@ -58,6 +58,13 @@ export interface PodLeverSession {
   displayName: string;
   /** Role as stored in the DB at login time */
   role: "owner" | "user";
+  /**
+   * Session version — mirrors users.session_version at login time.
+   * requireOwner() compares this against the live DB value on every privileged
+   * request. Logout increments the DB value, instantly invalidating this cookie
+   * even if it is still unexpired and cryptographically valid.
+   */
+  sessionVersion: number;
 }
 
 /**
@@ -163,10 +170,11 @@ export async function getAuthUser(): Promise<PodLeverSession | null> {
   const session = await getSession();
   if (!session.userId) return null;
   return {
-    userId:       session.userId,
-    replitUserId: session.replitUserId,
-    displayName:  session.displayName,
-    role:         session.role,
+    userId:         session.userId,
+    replitUserId:   session.replitUserId,
+    displayName:    session.displayName,
+    role:           session.role,
+    sessionVersion: session.sessionVersion,
   };
 }
 

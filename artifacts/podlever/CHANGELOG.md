@@ -29,6 +29,46 @@ Three options were evaluated:
 
 ---
 
+## [0.1.0-alpha.3] — 2026-07-18 — Auth Boundary: Session Revocation + Verification (Task #8)
+
+### Security
+
+**Session version revocation mechanism** — stolen or old cookies are invalidated the moment the owner logs out, with no need to wait for the 7-day cookie maxAge:
+
+- **`db/schema/users.ts`** — Added `session_version INTEGER NOT NULL DEFAULT 1` column. Incremented atomically at logout; never reset on login.
+- **`providers/auth.ts`** — Added `sessionVersion: number` to `PodLeverSession`; embedded in the iron-session cookie at login time.
+- **`app/auth/callback/route.ts`** — Reads `session_version` from the upserted user row and embeds it in the cookie.
+- **`app/auth/logout/route.ts`** — Increments `users.session_version` atomically (`session_version + 1`) before destroying the cookie. All cookies issued before logout are instantly invalidated.
+- **`providers/owner-guard.ts`** — `requireOwner()` now enforces three gates per privileged request:
+  - Gate 1: cookie decrypts and `userId` is present
+  - Gate 2: `role === "owner"`
+  - Gate 3 *(new)*: `users.session_version` in DB matches `sessionVersion` in cookie — rejects stolen/replayed cookies after logout
+- **`providers/auth-errors.ts`** *(new)* — `UnauthorizedError` and `ForbiddenError` extracted from `owner-guard.ts` to a file without `server-only`, enabling import by `tsx` scripts. `owner-guard.ts` re-exports both; all existing call sites unaffected.
+
+**`scripts/verify-auth.ts`** — 34-assertion verification script:
+1. No session cookie → `UnauthorizedError` (401)
+2. Tampered cookie (wrong AES-GCM HMAC) → decryption fails → `UnauthorizedError` (401)
+3. `role="user"` session → `ForbiddenError` (403) with role in message
+4. Valid owner session with matching DB version → guard passes (no false rejects)
+5. **Stolen cookie rejected**: cookie version (1) ≠ DB version (2) after logout increment → `UnauthorizedError` (401)
+6. Logout `session.destroy()` clears cookie in memory; absent-cookie request rejected
+
+### Schema migration
+
+```sql
+ALTER TABLE "users" ADD COLUMN "session_version" integer DEFAULT 1 NOT NULL;
+```
+Applied to the live DB via `db:push-force`.
+
+### Validated
+
+```
+pnpm --filter @workspace/podlever run typecheck   →  0 errors
+pnpm --filter @workspace/podlever run verify-auth →  34/34 assertions passed
+```
+
+---
+
 ## [0.1.0-alpha.1] — 2026-07-18 — Phase 1A Security Audit Remediations (Task #6)
 
 ### Security
