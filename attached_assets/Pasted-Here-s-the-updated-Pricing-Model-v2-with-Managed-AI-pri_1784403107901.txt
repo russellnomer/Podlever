@@ -1,0 +1,201 @@
+Here’s the updated Pricing Model v2 with Managed AI priced at $7.00 per episode.
+
+PodLever Pricing Model — v2.1 (Updated)
+Core Principle
+PodLever sells orchestration and workflow, not raw AI.
+
+Users pay a platform fee for the system.
+AI processing is handled in one of two ways:
+BYOK (Bring Your Own Key) — User pays the AI providers directly.
+Managed AI Credits — User buys compute from PodLever.
+
+
+
+1. Cost Assumptions (Planning Baseline)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ComponentAmountNotesTranscription$0.40Safe mid-2026 estimateLLM Content Generation$1.20Multiple assets + retriesInfrastructure & Storage$0.25Grows over timeSupport & Retry allocation$0.15Often under-modeledTotal COGS (Managed AI)$2.00Planning baseline
+
+2. Pricing Structure
+A. Platform Subscription
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TierMonthly PriceIncluded EpisodesAI ModeBest ForFree$03BYOK onlyTrial / evaluationCreator$398BYOKSolo podcastersProfessional$9920BYOK + Managed AI creditsConsultants & serious creatorsStudio$24950BYOK + Managed AI + multi-show/teamSmall studios & agencies
+B. Managed AI Credits
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ItemPriceNotesManaged AI – per episode$7.00~3.5× markup on $2.00 COGSCredit Pack (10 episodes)$65Slight volume discountCredit Pack (25 episodes)$150Better discount
+
+3. Margin Snapshot (Managed AI)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AI COGSGross Margin at $7.00$1.20 (Best)83%$2.00 (Base)71%$2.5064%$3.00 (Worst)57%$3.5050%
+Even at $3.00 COGS, Managed AI still delivers a healthy 57% gross margin.
+
+4. Strategic Notes
+
+Platform fee is charged regardless of whether the user chooses BYOK or Managed AI.
+Managed AI is positioned as a convenience upsell, not the core product.
+$7.00 provides meaningfully better protection against rising AI costs than $6.00.
+Free tier (3 episodes) is limited but enough to experience the core value.
+Future expansion levers: additional shows, team seats, storage, priority processing, and annual plans.
+
+
+5. One-Page Summary (for Replit Task #12)
+text# PodLever Pricing Model v2.1
+Status: Draft for review
+Date: 2026-07-18
+
+## Philosophy
+PodLever sells orchestration, reliability, and time savings — not raw AI.
+Users can bring their own AI keys (BYOK) or purchase Managed AI credits.
+
+## Platform Tiers
+- Free: $0 / 3 episodes (BYOK only)
+- Creator: $39 / 8 episodes (BYOK)
+- Professional: $99 / 20 episodes (BYOK + Managed AI credits)
+- Studio: $249 / 50 episodes (BYOK + Managed AI + multi-show/team features)
+
+## Managed AI Credits
+- $7.00 per episode
+- Bulk packs available at a discount
+
+## Unit Economics (Planning Baseline)
+- Estimated fully-loaded COGS per 60-min episode (Managed AI): $2.00
+- Target gross margin on Managed AI: 65–75%
+- BYOK users generate very high platform margins (~95%)
+
+## Key Decisions
+- Platform fee is fully decoupled from AI compute
+- Managed AI is a convenience/upsell, not the core offering
+- $7.00 price point chosen for better margin protection vs $6.00
+- Free tier set at 3 episodes to improve chance of reaching “aha” moment
+
+## Open Items
+- Annual billing discount (recommended 15–20%)
+- Team seat pricing
+- Expansion metrics (shows, brands, storage)
+- Final credit system implementation details
+
+This version is ready to be used as the working pricing model.
