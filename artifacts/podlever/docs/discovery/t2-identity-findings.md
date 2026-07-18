@@ -118,5 +118,18 @@ Choose one:
 
 ## 6. Files Created for T2
 
-- `app/api/discovery/headers/route.ts` — diagnostic header inspection route (remove before Phase 1B)
+- `app/api/discovery/headers/route.ts` — diagnostic header inspection route (**removed — Task #5 audit**)
 - `docs/discovery/t2-identity-findings.md` — this document
+
+## 7. Task #5 Audit Results (2026-07-18)
+
+All "remove before Phase 1B" items from this document have been resolved:
+
+| Item | Status |
+|---|---|
+| `app/api/discovery/headers/route.ts` diagnostic route | ✅ Already removed — file does not exist |
+| `__STUB_OWNER_ID__` hardcoded stub identity | ✅ Never merged — replaced by `getOwnerReplitUserId()` reading `OWNER_REPLIT_USER_ID` / `REPLIT_USERID` |
+| `console.log` noise in auth routes | ✅ Not noise — structured SOC audit logs (`JSON.stringify`) intentionally retained |
+| `page.tsx` stale "#3 Remove diagnostic endpoint" UI reference | ✅ Removed in Task #5 audit |
+
+`grep -r "STUB\|__DEV\|TODO.*auth\|hardcoded" artifacts/podlever` — **zero actionable hits in production code paths.**

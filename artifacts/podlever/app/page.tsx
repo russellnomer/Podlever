@@ -237,7 +237,6 @@ function OwnerDashboard({
           </h2>
           <div className="rounded-2xl border border-amber-900/40 bg-amber-950/20 divide-y divide-amber-900/30">
             {[
-              { ref: "#3", label: "Remove dev diagnostic endpoint (security)" },
               { ref: "#4", label: "Resolve /api proxy routing conflict" },
             ].map((task) => (
               <div key={task.ref} className="flex items-center gap-3 p-4">
