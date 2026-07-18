@@ -1,0 +1,73 @@
+Grok is absolutely right. A "How to Use" wrapper is the perfect final touch to ensure the Replit Agent understands exactly how to ingest and execute this plan without going rogue.
+
+Since we are aligned, there is no need to wait for Grok to generate it. I have compiled the final, ready-to-paste Phase 1A artifact for you below, complete with the instructions and the T3 Checkpoint expectations.
+
+Following that, I have also mapped out the **Phase 1B High-Level Outline** so you know exactly what infrastructure comes next once the foundation is poured.
+
+Here is your final playbook.
+
+---
+
+## The Final Copy-Paste Artifact for Replit
+
+*Copy everything below this line and paste it directly into a new Replit Agent chat.*
+
+---
+
+**HOW TO USE THIS PLAN**
+You are an expert Principal Software Engineer. I am providing you with the strict, finalized Phase 1A architectural blueprint for **PodLever**, an enterprise-grade podcast automation engine.
+
+Your instructions:
+
+1. Read the entire plan below carefully.
+2. Acknowledge receipt of the plan and break it down into an actionable checklist.
+3. Begin executing **Task 1 (T1)**.
+4. **CRITICAL:** When you reach **Task 3 (T3 - Human Checkpoint)**, you must completely halt execution, report your findings from T2, and wait for my explicit written approval before writing any authentication code.
+
+**#1 - PodLever Phase 1A — Next.js Foundation Plan**
+
+**1. Executive Summary**
+Phase 1A establishes the architectural skeleton of PodLever as a Next.js 15 App Router application: typed configuration, Replit PostgreSQL + Drizzle schema, an AuthProvider abstraction gated by an Environment Discovery task and a mandatory Human Checkpoint, Owner-only role protection, a Repository + Service layer for Episode and Asset only, a strongly-typed Episode Finite State Machine with optimistic locking (`fsm_version`), an append-only PipelineEvent log with idempotency guarantees, a verification script, and three ADRs. No product features are built. Success means a subsequent coding agent can execute every task without making new architectural decisions, and `scripts/verify-fsm.ts` proves the FSM, locking, and idempotency behavior end-to-end.
+
+**2. Architecture Overview**
+
+* **Framework:** Next.js 15 App Router, TypeScript strict, Tailwind, Zod. shadcn/ui initialized non-interactively (init only; no components installed).
+* **Layering (mandatory):** Server Action / Route Handler / Job → Service → Repository → Drizzle. Server Actions, Route Handlers, and Jobs never call Repositories directly. `/jobs` exists as an empty, structured placeholder only.
+* **Persistence:** Replit PostgreSQL via Drizzle ORM; minimum normalized schema (User, Episode, Asset, PipelineEvent) designed for additive evolution.
+* **Identity:** A narrow AuthProvider interface in `/providers`; concrete implementation chosen only after Environment Discovery + Human Checkpoint. Middleware reads identity only — never touches the database.
+* **Validation strategy:** Single source of Zod schemas per domain entity in `/types`.
+
+**3. Phase 1A Task Breakdown**
+
+* **T1 — Project Initialization:** Next.js 15 App Router + TypeScript + Tailwind + Zod scaffold.
+* **T2 — Environment Discovery (Identity):** Empirically determine the active Replit identity mechanism available to this app (proxy-injected headers vs Replit Identity/JWT vs managed auth).
+* **T3 — HUMAN CHECKPOINT (Mandatory Halt):** Execute halt. Report T2 findings, and wait for explicit human confirmation before AuthProvider design is finalized.
+* **T4 — Typed Configuration:** `/config` module validating all environment variables at startup with Zod.
+* **T5 — Database Schema + Migrations:** Drizzle schema in `/db` (users, episodes, assets, pipeline_events). Plan `drizzle.config.ts` and package.json scripts for generate/migrate/push/studio.
+* **T6 — AuthProvider + Middleware + Safe User Sync:** Implement `/providers/auth` exposing a narrow interface based on T3's outcome.
+* **T7 — Owner-only Role Protection:** Role check (owner) enforced in the Service layer entry points for all mutating operations.
+* **T8 — Repository + Service Layer:** `/repositories` with EpisodeRepository and AssetRepository. `/services` with EpisodeService and AssetService orchestrating validation, authorization, and transactions.
+* **T9 — Episode Finite State Machine:** Strongly-typed FSM in `/server`. Optimistic-lock UPDATE guarded by current `fsm_version`. INSERT PipelineEvent with the caller-supplied `idempotency_key`.
+* **T10 — Minimal Verification UI:** The absolute minimum UI needed to verify auth + owner protection interactively: a signed-in indicator and one owner-gated action.
+* **T11 — Verification Script:** `scripts/verify-fsm.ts` executed via `tsx` covering all four required FSM behaviors.
+* **T12 — Architectural Decision Records:** Three ADRs in `/docs/adr` (Architecture, Repository Pattern, FSM).
+
+**4. Verification Strategy & Exit Criteria**
+Complete when: all verification steps pass (Static, Build, Schema, FSM script, Auth manual check); T3 checkpoint decision recorded; three ADRs written; no layering violations found by code search.
+
+---
+
+---
+
+## Next Steps: The Phase 1B Preview
+
+Once the Replit Agent successfully verifies the FSM and writes the ADRs, you will own the engine block. **Phase 1B** is where we install the fuel lines and the spark plugs.
+
+When you are ready, Phase 1B will focus strictly on the following infrastructure:
+
+* **1. Object Storage Infrastructure:** Wiring up Cloudflare R2 or AWS S3 for secure raw audio uploads via pre-signed URLs (bypassing the Next.js server limits).
+* **2. Background Job Processing:** Implementing a robust queuing system (like Inngest or Upstash QStash) into the `/jobs` folder you scaffolded in 1A. Vercel/Next.js serverless functions have timeouts; background jobs are required for media processing.
+* **3. The AI Service Layer:** Integrating the Claude API (for prompts/transcription analysis) behind the Service Layer, utilizing the idempotency keys to ensure you are never double-billed for API retries.
+* **4. Webhook Ingestion:** Setting up secure, validated endpoints to receive "Processing Complete" pings from external media APIs (like AssemblyAI), which will automatically trigger the next state in your FSM.
+
+You are fully prepared. Create a new Replit workspace, deploy the agent, and let’s build PodLever.
