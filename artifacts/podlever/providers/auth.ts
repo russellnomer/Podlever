@@ -65,6 +65,17 @@ export interface PodLeverSession {
    * even if it is still unexpired and cryptographically valid.
    */
   sessionVersion: number;
+  /**
+   * Beta access level for non-owner users — set at login time by checking
+   * the waitlist table for a matching replitUserId.
+   *
+   * undefined / absent = no access → redirect to /verify-access
+   * "invited"          = onboarding not yet completed → redirect to /onboarding
+   * "active"           = full access to the product
+   *
+   * Owners always bypass this check (role === "owner").
+   */
+  betaAccess?: "invited" | "active";
 }
 
 /**

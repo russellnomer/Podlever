@@ -30,10 +30,16 @@
 
 "use server";
 
-import { z } from "zod";
-import { requireOwner } from "@/providers/owner-guard";
+import { z }              from "zod";
+import { redirect }       from "next/navigation";
+import { after }          from "next/server";
+import { requireOwner }   from "@/providers/owner-guard";
 import { episodeService } from "@/services";
-import type { Episode } from "@/db/schema";
+import { episodeRepository, assetRepository } from "@/repositories";
+import { uploadAudioBuffer } from "@/lib/storage";
+import { executeTransition } from "@/server/fsm";
+import { randomUUID }     from "crypto";
+import type { Episode }   from "@/db/schema";
 import type { TransitionResult } from "@/server/fsm";
 
 /** Reusable UUID validator for episodeId parameters */
@@ -91,4 +97,112 @@ export async function transitionEpisodeAction(
 ): Promise<TransitionResult> {
   const { userId } = await requireOwner();
   return episodeService.transitionEpisode(input, userId);
+}
+
+// ─── Audio upload + processing ────────────────────────────────────────────────
+
+/** Max audio file size accepted by this action (25MB — OpenAI Whisper hard limit). */
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
+/** Allowed audio MIME types. */
+const ALLOWED_AUDIO_TYPES = new Set([
+  "audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg",
+  "audio/flac", "audio/x-m4a", "audio/mp3",
+]);
+
+/**
+ * uploadEpisodeAction — Full upload + processing trigger for a new episode.
+ *
+ * Accepts a FormData submission from EpisodeUploadForm with fields:
+ *   - title: string — episode title
+ *   - audio: File  — audio file (mp3 / m4a / wav / ogg / flac, max 25MB)
+ *
+ * Steps:
+ *   1. Validate owner auth
+ *   2. Validate title + file (type, size)
+ *   3. Create episode row (draft state)
+ *   4. Upload audio buffer to GCS
+ *   5. Save audio storage key on the episode
+ *   6. Create a cleaned_audio asset pointing to the GCS key
+ *   7. Transition episode: draft → processing
+ *   8. Schedule background processing via after()
+ *   9. Redirect to the episode detail page
+ *
+ * Returns: never (redirect throws) — errors surface as thrown Error instances.
+ */
+export async function uploadEpisodeAction(formData: FormData): Promise<never> {
+  const { userId } = await requireOwner();
+
+  // ── Validate title ──────────────────────────────────────────────────────────
+  const title = z
+    .string()
+    .trim()
+    .min(1, "Title is required")
+    .max(255, "Title must be 255 characters or fewer")
+    .parse(formData.get("title"));
+
+  // ── Validate audio file ─────────────────────────────────────────────────────
+  const audioFile = formData.get("audio");
+  if (!(audioFile instanceof File) || audioFile.size === 0) {
+    throw new Error("Please select an audio file.");
+  }
+  if (!ALLOWED_AUDIO_TYPES.has(audioFile.type) && !audioFile.name.match(/\.(mp3|m4a|wav|ogg|flac)$/i)) {
+    throw new Error("Unsupported audio format. Use MP3, M4A, WAV, OGG, or FLAC.");
+  }
+  if (audioFile.size > MAX_AUDIO_BYTES) {
+    throw new Error(`Audio file exceeds the 25 MB limit (got ${(audioFile.size / 1024 / 1024).toFixed(1)} MB).`);
+  }
+
+  // ── Create episode (draft) ──────────────────────────────────────────────────
+  const episode = await episodeService.createEpisode({ title }, userId);
+  const episodeId = episode.id;
+
+  // ── Upload audio to GCS ─────────────────────────────────────────────────────
+  const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
+  const storageKey  = await uploadAudioBuffer(episodeId, audioFile.name, audioBuffer, audioFile.type || "audio/mpeg");
+
+  // ── Persist storage key + create cleaned_audio asset ───────────────────────
+  await episodeRepository.setAudioStorageKey(episodeId, storageKey);
+  await assetRepository.createAssetVersion({
+    episodeId,
+    assetType:  "cleaned_audio",
+    label:      `Original upload: ${audioFile.name}`,
+    storageKey,
+    content:    null,
+  });
+
+  // ── Transition: draft → processing ─────────────────────────────────────────
+  await executeTransition({
+    episodeId,
+    ownerId:           userId,
+    fromState:         "draft",
+    currentFsmVersion: episode.fsmVersion,
+    toState:           "processing",
+    idempotencyKey:    randomUUID(),
+    metadata:          JSON.stringify({ source: "upload-action", filename: audioFile.name }),
+  });
+
+  // ── Fire background processing after response is sent ──────────────────────
+  // after() runs the callback once the Server Action response has been flushed,
+  // so the redirect reaches the client without waiting for AI processing to complete.
+  const port       = process.env.PORT ?? "3000";
+  const processUrl = `http://localhost:${port}/rpc/episodes/${episodeId}/process`;
+  const secret     = process.env.CRON_SECRET ?? "";
+
+  after(async () => {
+    try {
+      const res = await fetch(processUrl, {
+        method:  "POST",
+        headers: { Authorization: `Bearer ${secret}` },
+      });
+      if (!res.ok) {
+        console.error(JSON.stringify({ event: "episode.process.trigger_failed", episodeId, status: res.status }));
+      }
+    } catch (err) {
+      console.error(JSON.stringify({ event: "episode.process.trigger_error", episodeId, error: String(err) }));
+    }
+  });
+
+  // Redirect to the episode detail page — this throws internally (Next.js redirect)
+  redirect(`/dashboard/episodes/${episodeId}`);
 }

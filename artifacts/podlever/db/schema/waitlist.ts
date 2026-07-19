@@ -43,6 +43,8 @@ export const LEAD_STATUSES = [
   "new",           // Just signed up — not yet contacted
   "contacted",     // Owner has reached out
   "qualified",     // Confirmed fit for PodLever
+  "invited",       // Owner invited to beta — awaiting first login
+  "active",        // Beta user — onboarded and using the product
   "converted",     // Subscribed (Stripe, Phase 2)
   "disqualified",  // Not a fit; won't pursue
 ] as const;
@@ -90,6 +92,14 @@ export const waitlist = pgTable("waitlist", {
    * Nullable: no notes on a lead is the common initial state.
    */
   notes: text("notes"),
+
+  /**
+   * Replit user ID (the OIDC `sub` claim) of the authenticated beta user.
+   * Set when the invitee signs in and claims their invite via /verify-access.
+   * Null until the user authenticates and self-declares their email.
+   * Used by the auth callback + middleware to gate product access.
+   */
+  replitUserId: text("replit_user_id").unique(),
 
   /** ISO timestamp of first submission. */
   createdAt: timestamp("created_at", { withTimezone: true })

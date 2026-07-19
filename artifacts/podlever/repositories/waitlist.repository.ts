@@ -386,6 +386,74 @@ export class WaitlistRepository {
       .orderBy(asc(waitlist.source));
     return rows.map((r) => r.source);
   }
+
+  // ─── Beta invite methods ────────────────────────────────────────────────────
+
+  /**
+   * findInvitedByEmail — Find a waitlist entry by email with status "invited".
+   *
+   * Used by claimBetaInviteAction to verify self-declared email against the list.
+   * Returns null if no matching invited entry found.
+   *
+   * @param email - Lowercased, trimmed email to look up
+   */
+  async findInvitedByEmail(email: string): Promise<WaitlistEntry | null> {
+    const [row] = await db
+      .select()
+      .from(waitlist)
+      .where(and(eq(waitlist.email, email), eq(waitlist.status, "invited")))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * linkReplitUserId — Associate a Replit user ID with a waitlist entry.
+   *
+   * Called when a user successfully claims their invite via /verify-access.
+   * Idempotent if the entry already has the same replitUserId.
+   *
+   * @param id           - UUID of the waitlist entry
+   * @param replitUserId - Replit OIDC sub claim
+   */
+  async linkReplitUserId(id: string, replitUserId: string): Promise<void> {
+    await db
+      .update(waitlist)
+      .set({ replitUserId, updatedAt: new Date() })
+      .where(eq(waitlist.id, id));
+  }
+
+  /**
+   * activateBetaUser — Transition a user's waitlist entry from "invited" → "active".
+   *
+   * Called when the user completes onboarding. Idempotent — if status is already
+   * "active" the update is a no-op.
+   *
+   * @param replitUserId - Replit OIDC sub claim
+   */
+  async activateBetaUser(replitUserId: string): Promise<void> {
+    await db
+      .update(waitlist)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(and(eq(waitlist.replitUserId, replitUserId), eq(waitlist.status, "invited")));
+  }
+
+  /**
+   * markLeadInvited — Set a waitlist entry's status to "invited".
+   *
+   * Called by the owner CRM invite action. Safe to call on any non-active status.
+   *
+   * @param id - UUID of the waitlist entry to invite
+   * @returns  The updated entry
+   */
+  async markLeadInvited(id: string): Promise<WaitlistEntry> {
+    const [updated] = await db
+      .update(waitlist)
+      .set({ status: "invited", updatedAt: new Date() })
+      .where(eq(waitlist.id, id))
+      .returning();
+    if (!updated) throw new Error(`Waitlist entry ${id} not found`);
+    return updated;
+  }
 }
 
 // ─── Singleton ────────────────────────────────────────────────────────────────

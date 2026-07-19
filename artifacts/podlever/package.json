@@ -19,12 +19,14 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "catalog:",
     "iron-session": "^8.0.4",
     "lucide-react": "catalog:",
     "next": "^15.3.5",
+    "openai": "^6.48.0",
     "openid-client": "^6.8.4",
     "pg": "^8.22.0",
     "react": "catalog:",

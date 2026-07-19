@@ -77,6 +77,69 @@ const FilterSchema = z.object({
 /** Export-only filter (no pagination) */
 const ExportFilterSchema = FilterSchema;
 
+// ─── InviteToBeta schema ───────────────────────────────────────────────────────
+
+/** InviteLeadSchema — validates the lead ID for the invite action. */
+const InviteLeadSchema = z.object({
+  id: z.string().uuid("Lead ID must be a valid UUID"),
+});
+
+// ─── inviteToBeta ─────────────────────────────────────────────────────────────
+
+/**
+ * inviteToBeta — Owner action: invite a waitlist lead to the beta.
+ *
+ * Sets the lead's status to "invited" and logs to crm_audit_log.
+ * The owner then notifies the person manually (no email infra required for beta).
+ *
+ * Only callable on leads in a pre-invite status (new, contacted, qualified).
+ * Attempting to invite someone already "active" or "converted" is a no-op.
+ *
+ * @param input - { id: string } — UUID of the waitlist entry
+ * @returns     { success: true, data: WaitlistEntry } or { success: false, error: string }
+ */
+export async function inviteToBeta(
+  input: unknown,
+): Promise<{ success: true; data: WaitlistEntry } | { success: false; error: string }> {
+  let owner: Awaited<ReturnType<typeof requireOwner>>;
+  try {
+    owner = await requireOwner();
+  } catch {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const parsed = InviteLeadSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const { id } = parsed.data;
+  let hdrs: Awaited<ReturnType<typeof headers>>;
+  try {
+    hdrs = await headers();
+  } catch {
+    hdrs = new Headers() as unknown as Awaited<ReturnType<typeof headers>>;
+  }
+
+  try {
+    const updated = await waitlistRepository.markLeadInvited(id);
+
+    // Audit log — no PII in meta
+    await crmAuditRepository.insert({
+      actorId:   owner.userId,
+      ipAddress: hdrs.get("x-forwarded-for") ?? hdrs.get("x-real-ip") ?? "unknown",
+      userAgent: hdrs.get("user-agent") ?? "unknown",
+      action:    "invite_to_beta",
+      leadIds:   [id],
+      meta:      JSON.stringify({ newStatus: "invited" }),
+    });
+
+    return { success: true, data: updated };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to invite lead" };
+  }
+}
+
 /** UpdateLead patch schema */
 const UpdateLeadSchema = z.object({
   id:     z.string().uuid("Lead ID must be a valid UUID"),

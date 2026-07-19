@@ -264,6 +264,72 @@ export class EpisodeRepository {
   }
 
   /**
+   * getEpisodeById — Fetch a single episode by ID with NO owner scoping.
+   *
+   * INTERNAL USE ONLY — never call from user-facing entry points.
+   * Used by the processing pipeline (authenticated via CRON_SECRET) which needs
+   * to load the episode without a user session.
+   *
+   * @param episodeId - UUID of the episode
+   * @param tx        - Optional transaction
+   * @returns         The episode row
+   * @throws          EpisodeNotFoundError if not found
+   */
+  async getEpisodeById(episodeId: string, tx?: DbTx): Promise<Episode> {
+    const client = tx ?? db;
+    const [row] = await client
+      .select()
+      .from(episodes)
+      .where(eq(episodes.id, episodeId))
+      .limit(1);
+    if (!row) throw new EpisodeNotFoundError(episodeId);
+    return row;
+  }
+
+  /**
+   * setAudioStorageKey — Persist the GCS storage key for the uploaded audio file.
+   *
+   * Called after the owner's browser upload completes and we know the GCS path.
+   * Safe to call multiple times (idempotent — last write wins).
+   *
+   * @param episodeId  - UUID of the episode
+   * @param storageKey - GCS object name, e.g. "audio/{id}/original.mp3"
+   * @param tx         - Optional transaction
+   * @returns          The updated Episode row
+   */
+  async setAudioStorageKey(
+    episodeId: string,
+    storageKey: string,
+    tx?: DbTx,
+  ): Promise<Episode> {
+    const client = tx ?? db;
+    const [updated] = await client
+      .update(episodes)
+      .set({ audioStorageKey: storageKey, updatedAt: new Date() })
+      .where(eq(episodes.id, episodeId))
+      .returning();
+    if (!updated) throw new EpisodeNotFoundError(episodeId);
+    return updated;
+  }
+
+  /**
+   * listAllEpisodes — Fetch all non-archived episodes across all owners.
+   *
+   * ADMIN USE ONLY — owner dashboard overview. Never expose to regular users.
+   *
+   * @param limit   - Maximum rows to return (default 100)
+   * @returns       Episodes ordered by creation date descending
+   */
+  async listAllEpisodes(limit = 100): Promise<Episode[]> {
+    return db
+      .select()
+      .from(episodes)
+      .where(sql`${episodes.state} != 'archived'`)
+      .orderBy(sql`${episodes.createdAt} DESC`)
+      .limit(limit);
+  }
+
+  /**
    * listPipelineEventsForEpisode — Fetch the full FSM event history for an episode.
    *
    * @param episodeId - UUID of the episode

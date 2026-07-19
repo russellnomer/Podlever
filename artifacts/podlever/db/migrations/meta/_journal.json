@@ -22,6 +22,20 @@
       "when": 1753142400000,
       "tag": "0002_rate_limit_updated_at_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784486321207,
+      "tag": "0003_absurd_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784486843280,
+      "tag": "0004_magenta_redwing",
+      "breakpoints": true
     }
   ]
 }

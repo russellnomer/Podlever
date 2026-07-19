@@ -123,6 +123,14 @@ export const assets = pgTable("assets", {
    */
   label: text("label"),
 
+  /**
+   * Full text content of the asset (for text-based asset types).
+   * Stored in the DB for fast display without a GCS round-trip.
+   * Null for binary assets (cleaned_audio, youtube_cut, vertical_clip)
+   * that are served via storage_key instead.
+   */
+  content: text("content"),
+
   /** Row creation timestamp. */
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

@@ -98,6 +98,13 @@ export const episodes = pgTable("episodes", {
     .notNull()
     .defaultNow(),
 
+  /**
+   * GCS object key for the uploaded raw audio file.
+   * Set after the owner uploads audio; null until then.
+   * Example: "audio/{episodeId}/original.mp3"
+   */
+  audioStorageKey: text("audio_storage_key"),
+
   /** Last FSM transition timestamp. Updated on every state change. */
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

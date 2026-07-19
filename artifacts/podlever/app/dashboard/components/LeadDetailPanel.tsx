@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { WaitlistEntry } from "@/db/schema";
-import { updateLead } from "@/app/actions/crm.actions";
+import { updateLead, inviteToBeta } from "@/app/actions/crm.actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,12 +53,16 @@ function formatDateTime(date: Date | null | undefined): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function LeadDetailPanel({ lead, onClose, onSaved }: LeadDetailPanelProps) {
-  const [status, setStatus] = useState(lead.status);
-  const [notes,  setNotes]  = useState(lead.notes ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState<string | null>(null);
-  const [saved,  setSaved]  = useState(false);
+  const [status,   setStatus]   = useState(lead.status);
+  const [notes,    setNotes]    = useState(lead.notes ?? "");
+  const [saving,   setSaving]   = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+  const [saved,    setSaved]    = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Whether the "Invite to beta" button should be shown
+  const canInvite = ["new", "contacted", "qualified"].includes(status);
 
   // Reset form when lead prop changes (different lead opened)
   useEffect(() => {
@@ -98,6 +102,20 @@ export function LeadDetailPanel({ lead, onClose, onSaved }: LeadDetailPanelProps
       onSaved(result.data);
       // Auto-clear saved confirmation after 2 seconds
       setTimeout(() => setSaved(false), 2000);
+    } else {
+      setError(result.error);
+    }
+  };
+
+  const handleInvite = async () => {
+    if (!canInvite || inviting) return;
+    setInviting(true);
+    setError(null);
+    const result = await inviteToBeta({ id: lead.id });
+    setInviting(false);
+    if (result.success) {
+      setStatus("invited");
+      onSaved(result.data);
     } else {
       setError(result.error);
     }
@@ -226,22 +244,40 @@ export function LeadDetailPanel({ lead, onClose, onSaved }: LeadDetailPanelProps
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-zinc-800 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!isDirty || saving}
-            className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-medium hover:bg-emerald-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
-          >
-            Close
-          </button>
+        <div className="px-6 py-4 border-t border-zinc-800 space-y-2">
+          {/* Invite to beta — shown only for pre-invite statuses */}
+          {canInvite && (
+            <button
+              type="button"
+              onClick={handleInvite}
+              disabled={inviting}
+              className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {inviting ? "Sending invite…" : "✉ Invite to beta"}
+            </button>
+          )}
+          {(status === "invited") && (
+            <p className="text-center text-xs text-indigo-400">
+              ✓ Invite sent — notify them manually to sign in
+            </p>
+          )}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!isDirty || saving}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-medium hover:bg-emerald-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </>

@@ -50,7 +50,9 @@ export const CreateAssetVersionSchema = z.object({
   episodeId:   z.string().uuid("episodeId must be a valid UUID"),
   assetType:   AssetTypeSchema,
   label:       z.string().trim().max(255).optional(),
-  storageKey:  z.string().max(1024).optional(), // nullable in Phase 1A
+  storageKey:  z.string().max(1024).optional(),
+  /** Full text content for text-based assets (transcript, show_notes, etc.) */
+  content:     z.string().optional(),
 });
 
 // ─── Inferred types ───────────────────────────────────────────────────────────

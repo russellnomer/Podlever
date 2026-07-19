@@ -20,8 +20,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Experimental: enable React 19 features and Server Components
-  experimental: {},
+  experimental: {
+    // Allow Server Actions to receive audio file uploads up to 50MB.
+    // Podcast episodes for beta are capped at 25MB (OpenAI Whisper limit)
+    // but we add headroom for the multipart envelope.
+    serverActions: {
+      bodySizeLimit: "50mb",
+    },
+  },
 
   // TypeScript and ESLint: fail builds on errors (default in Next.js 15)
   typescript: {
