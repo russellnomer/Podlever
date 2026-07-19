@@ -38,6 +38,7 @@ import { episodeService } from "@/services";
 import { episodeRepository, assetRepository } from "@/repositories";
 import { uploadAudioBuffer } from "@/lib/storage";
 import { executeTransition } from "@/server/fsm";
+import { trackServerEvent }  from "@/lib/analytics";
 import { randomUUID }     from "crypto";
 import type { Episode }   from "@/db/schema";
 import type { TransitionResult } from "@/server/fsm";
@@ -170,6 +171,9 @@ export async function uploadEpisodeAction(formData: FormData): Promise<never> {
     storageKey,
     content:    null,
   });
+
+  // Track episode creation (non-blocking)
+  trackServerEvent("episode_created", userId, { episodeId });
 
   // ── Transition: draft → processing ─────────────────────────────────────────
   await executeTransition({

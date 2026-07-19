@@ -33,3 +33,9 @@ export {
   CrmAuditRepository,
   crmAuditRepository,
 } from "./crm-audit.repository";
+
+export {
+  usageRepository,
+  type UsageSummary,
+  type UserUsageSummary,
+} from "./usage.repository";

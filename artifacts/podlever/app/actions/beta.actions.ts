@@ -131,5 +131,15 @@ export async function activateBetaUserAction(): Promise<never> {
   ironSess.betaAccess = "active";
   await ironSess.save();
 
+  // Set user's plan to "beta" (pro-equivalent limits) in the DB
+  try {
+    const { db }    = await import("@/db");
+    const { users } = await import("@/db/schema");
+    const { eq }    = await import("drizzle-orm");
+    await db.update(users).set({ plan: "beta" }).where(eq(users.id, session.userId));
+  } catch (err) {
+    console.error(JSON.stringify({ event: "beta.plan_set.failed", replitUserId: session.replitUserId, error: String(err) }));
+  }
+
   redirect("/dashboard/episodes/new");
 }

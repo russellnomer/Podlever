@@ -40,3 +40,9 @@ export * from "./crm-audit-log";
 
 // Rate-limit hit store (no FK dependencies; used by SlidingWindowRateLimiter)
 export * from "./rate-limit-hits";
+
+// Usage metering — billable event log (depends on users + episodes)
+export * from "./usage-events";
+
+// First-party analytics event log (depends on users)
+export * from "./analytics-events";

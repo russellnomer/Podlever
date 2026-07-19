@@ -53,6 +53,7 @@ import {
   getOwnerReplitUserId,
 } from "@/providers/auth";
 import type { PodLeverSession, PkceState } from "@/providers/auth";
+import { trackServerEvent } from "@/lib/analytics";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // ── Step 1: Read and validate the PKCE state cookie ──────────────────────────
@@ -117,6 +118,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let dbSessionVersion: number;
 
   try {
+    // Read UTM params from the short-lived utm cookie set by middleware
+    let utmParams: Record<string, string> = {};
+    try {
+      const utmCookie = request.cookies.get("podlever_utm")?.value;
+      if (utmCookie) utmParams = JSON.parse(utmCookie);
+    } catch { /* ignore malformed cookie */ }
+
     const [upsertedUser] = await db
       .insert(users)
       .values({
@@ -124,6 +132,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         externalIdentityProvider: "replit",
         displayName,
         role,
+        // Store UTM on first insert only (first-touch attribution)
+        utmSource:   utmParams.utm_source   ?? null,
+        utmMedium:   utmParams.utm_medium   ?? null,
+        utmCampaign: utmParams.utm_campaign ?? null,
+        utmContent:  utmParams.utm_content  ?? null,
       })
       .onConflictDoUpdate({
         target: users.externalIdentityId,
@@ -132,14 +145,30 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           role,
           updatedAt: new Date(),
           // NOTE: session_version is NOT reset on login — only incremented at logout.
-          // Preserving the current value means a user who logs in again without
-          // logging out first retains the same version (no spurious invalidation).
+          // NOTE: utm_* columns are intentionally NOT updated here (first-touch only).
         },
       })
-      .returning({ id: users.id, sessionVersion: users.sessionVersion });
+      .returning({
+        id:             users.id,
+        sessionVersion: users.sessionVersion,
+        createdAt:      users.createdAt,
+        updatedAt:      users.updatedAt,
+      });
 
-    dbUserId        = upsertedUser!.id;
+    dbUserId         = upsertedUser!.id;
     dbSessionVersion = upsertedUser!.sessionVersion;
+
+    // Detect new signup: createdAt and updatedAt within 5s means this was an INSERT
+    const isNewUser = Math.abs(
+      upsertedUser!.updatedAt.getTime() - upsertedUser!.createdAt.getTime()
+    ) < 5000;
+
+    // Fire analytics events (non-blocking)
+    if (isNewUser) {
+      trackServerEvent("signup", dbUserId, { role });
+    }
+    trackServerEvent("auth.login", dbUserId, { role });
+
   } catch (err) {
     console.error("[auth/callback] User upsert failed:", (err as Error).message);
     return NextResponse.redirect(new URL("/auth/login?error=db", request.url));

@@ -23,7 +23,43 @@ import { Mic, Upload, Loader2, AlertCircle } from "lucide-react";
 /** Max file size shown in error messages (matches server-side constant). */
 const MAX_MB = 25;
 
-export function EpisodeUploadForm() {
+interface EpisodeUploadFormProps {
+  /** When true, shows a plan-limit reached message instead of the upload form. */
+  atLimit?: boolean;
+  /** User's current plan label (e.g. "Free"). Shown in the upgrade prompt. */
+  planLabel?: string;
+  /** Number of episodes used this period. */
+  used?: number;
+  /** Episode limit for this period. */
+  limit?: number;
+}
+
+export function EpisodeUploadForm({ atLimit, planLabel, used, limit }: EpisodeUploadFormProps) {
+  if (atLimit) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <span className="text-2xl">🔒</span>
+        </div>
+        <div>
+          <p className="text-base font-semibold text-gray-900 mb-1">
+            Monthly limit reached
+          </p>
+          <p className="text-sm text-gray-500">
+            You&apos;ve used {used}/{limit === Infinity ? "∞" : limit} episodes on the{" "}
+            <span className="font-medium">{planLabel ?? "Free"}</span> plan this month.
+          </p>
+        </div>
+        <a
+          href="/pricing"
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm
+                     font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
+        >
+          Upgrade to upload more
+        </a>
+      </div>
+    );
+  }
   const formRef             = useRef<HTMLFormElement>(null);
   const [error, setError]   = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);

@@ -98,6 +98,26 @@ export const users = pgTable("users", {
    */
   sessionVersion: integer("session_version").notNull().default(1),
 
+  /**
+   * Current plan slug for this user.
+   * Matches keys in lib/tiers.ts: "free" | "beta" | "pro" | "agency".
+   * Default: "free" (upgraded by Stripe webhooks in Task #14).
+   * Beta invitees are set to "beta" by activateBetaUserAction.
+   * Text column (not pgEnum) so tier names can change without schema migration.
+   */
+  plan: text("plan").notNull().default("free"),
+
+  /**
+   * UTM attribution fields — set once on first authenticated visit.
+   * Captured from the URL query string and stored here for funnel analysis.
+   * All nullable: most users arrive without UTM params.
+   * Never overwritten after initial set — preserves first-touch attribution.
+   */
+  utmSource:   text("utm_source"),
+  utmMedium:   text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmContent:  text("utm_content"),
+
   /** Row creation timestamp. Set once; never updated. */
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

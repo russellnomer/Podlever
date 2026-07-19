@@ -16,16 +16,30 @@ import { redirect }                from "next/navigation";
 import Link                        from "next/link";
 import { getAuthUser }             from "@/providers/auth";
 import { requireOwnerFromSession } from "@/providers/owner-guard";
+import { usageRepository }         from "@/repositories";
+import { trackServerEvent }        from "@/lib/analytics";
 import { EpisodeUploadForm }       from "../components/EpisodeUploadForm";
 import { ArrowLeft, Zap }          from "lucide-react";
 
 export default async function NewEpisodePage() {
   // Auth guard — redirect unauthenticated users to login
   const session = await getAuthUser();
+  let userId: string | undefined;
   try {
-    await requireOwnerFromSession(session);
+    const identity = await requireOwnerFromSession(session);
+    userId = identity.userId;
   } catch {
     redirect("/auth/login");
+  }
+
+  // Usage gate — check if the user is at their monthly episode limit
+  const usage = await usageRepository.getUsageSummary(userId!);
+
+  // Track upgrade_prompt_shown when a user hits their limit (non-blocking)
+  if (usage.atLimit) {
+    trackServerEvent("upgrade_prompt_shown", userId!, {
+      plan: usage.plan, used: usage.used, limit: usage.limit,
+    });
   }
 
   return (
@@ -63,7 +77,12 @@ export default async function NewEpisodePage() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
-          <EpisodeUploadForm />
+          <EpisodeUploadForm
+            atLimit={usage.atLimit}
+            planLabel={usage.tierLabel}
+            used={usage.used}
+            limit={usage.limit}
+          />
         </div>
 
         {/* Tip */}

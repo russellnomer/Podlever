@@ -87,7 +87,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   // ── Always allow static + public pages ────────────────────────────────────
   if (isPublicPath(pathname) || isAuthPath(pathname)) {
-    return NextResponse.next();
+    const res = NextResponse.next();
+    captureUtmParams(request, res);
+    return res;
   }
 
   // ── Read session from cookie (no DB hit) ─────────────────────────────────
@@ -135,6 +137,36 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   // betaAccess === "active" → full product access
   return NextResponse.next();
+}
+
+// ─── UTM capture ─────────────────────────────────────────────────────────────
+
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content"] as const;
+const UTM_COOKIE = "podlever_utm";
+const UTM_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+/**
+ * captureUtmParams — Read UTM query params from the request URL and write
+ * them to a short-lived cookie (podlever_utm) for first-touch attribution.
+ *
+ * Only sets the cookie if UTM params are present AND the cookie doesn't
+ * already exist (first-touch — never overwrite with a later visit's UTMs).
+ */
+function captureUtmParams(request: NextRequest, response: NextResponse): void {
+  if (request.cookies.has(UTM_COOKIE)) return; // already captured
+  const { searchParams } = request.nextUrl;
+  const utms: Record<string, string> = {};
+  for (const key of UTM_KEYS) {
+    const val = searchParams.get(key);
+    if (val) utms[key] = val.slice(0, 200); // cap length
+  }
+  if (Object.keys(utms).length === 0) return;
+  response.cookies.set(UTM_COOKIE, JSON.stringify(utms), {
+    httpOnly: false,   // readable in auth callback (server-to-server same-process)
+    sameSite: "lax",
+    maxAge:   UTM_MAX_AGE,
+    path:     "/",
+  });
 }
 
 // ─── Matcher — run on all app routes except Next.js internals ────────────────

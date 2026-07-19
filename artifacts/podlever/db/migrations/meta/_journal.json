@@ -36,6 +36,20 @@
       "when": 1784486843280,
       "tag": "0004_magenta_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784487386632,
+      "tag": "0005_cool_nico_minoru",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784487775222,
+      "tag": "0006_mushy_spectrum",
+      "breakpoints": true
     }
   ]
 }

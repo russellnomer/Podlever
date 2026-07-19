@@ -31,9 +31,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z }                          from "zod";
 import { openai, MODELS }             from "@/lib/openai";
 import { downloadAudioBuffer }        from "@/lib/storage";
-import { episodeRepository }          from "@/repositories";
-import { assetRepository }            from "@/repositories";
+import { episodeRepository, assetRepository, usageRepository } from "@/repositories";
 import { executeTransition }          from "@/server/fsm";
+import { trackServerEvent }           from "@/lib/analytics";
 import { randomUUID }                 from "crypto";
 import { toFile }                     from "openai";
 
@@ -194,6 +194,16 @@ export async function POST(
       toState:           "ready",
       idempotencyKey:    randomUUID(),
       metadata:          JSON.stringify({ source: "process-route", assetCount: generated.length + 1 }),
+    });
+
+    // ── 7. Record usage event + analytics (non-blocking) ─────────────────────
+    await usageRepository.recordUsageEvent(ownerId, episodeId, "episode_processed").catch((err) => {
+      console.error(JSON.stringify({ event: "usage.record.failed", episodeId, error: String(err) }));
+    });
+    trackServerEvent("episode_processed", ownerId, {
+      episodeId,
+      assetCount: generated.length + 1,
+      transcriptChars: transcript.length,
     });
 
     console.log(JSON.stringify({ event: "episode.process.complete", episodeId, ts: new Date().toISOString() }));
