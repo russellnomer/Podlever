@@ -642,7 +642,7 @@ function Footer() {
     { label: "PawsofKarma", href: "https://pawsofkarma.com", title: "Pet wellness" },
     { label: "GuildsForAll", href: "https://guildsforall.com", title: "Community guilds platform" },
     { label: "ThinkLikeACISO", href: "https://thinklikeaciso.com", title: "Cybersecurity leadership" },
-    { label: "MarketArchitect", href: "https://marketarchitect.com", title: "Marketing strategy tools" },
+    { label: "MarketArchitect", href: "https://marketarchitect.app", title: "Marketing strategy tools" },
     { label: "LotteryPro", href: "https://lotterypro.app", title: "Lottery analysis and tools" },
   ] as const;
 
