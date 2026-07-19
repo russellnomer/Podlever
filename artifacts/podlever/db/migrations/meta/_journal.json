@@ -8,6 +8,13 @@
       "when": 1784435720964,
       "tag": "0000_medical_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784469539550,
+      "tag": "0001_spooky_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

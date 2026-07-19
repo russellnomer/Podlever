@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #19 — bot flood protection)
+ * Last modified: 2026-07-19 by agent (Task #38 — rate limiter now async; added await)
  *
  * Server Actions for the public waitlist capture form on the landing and
  * pricing pages. Phase 1: stores email in the `waitlist` DB table only.
@@ -28,6 +28,7 @@ import { db } from "@/db";
 import { waitlist } from "@/db/schema";
 import { sql } from "drizzle-orm";
 import { SlidingWindowRateLimiter } from "@/lib/rate-limiter";
+import { PostgresRateLimitStore } from "@/lib/rate-limit-store";
 
 // ─── Rate limiter ────────────────────────────────────────────────────────────
 
@@ -39,11 +40,14 @@ import { SlidingWindowRateLimiter } from "@/lib/rate-limiter";
  * Limit: 5 submissions per IP per 10-minute sliding window.
  * Rationale: A real person signs up once. 5 slots absorb browser double-
  * submits and form retries without ever blocking a legitimate user.
+ *
+ * Backed by PostgresRateLimitStore so the limit persists across restarts.
+ * DB key format: "waitlist:<ip>" (namespaced by PostgresRateLimitStore).
  */
-const waitlistRateLimiter = new SlidingWindowRateLimiter({
-  max:      5,
-  windowMs: 10 * 60 * 1_000, // 10-minute sliding window
-});
+const waitlistRateLimiter = new SlidingWindowRateLimiter(
+  { max: 5, windowMs: 10 * 60 * 1_000 }, // 10-minute sliding window
+  new PostgresRateLimitStore("waitlist"),
+);
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
@@ -96,7 +100,7 @@ export async function joinWaitlist(
   // are disclosed to avoid helping a bot operator tune their attack.
   const requestHeaders = await headers();
   const clientIp = SlidingWindowRateLimiter.extractIp(requestHeaders);
-  const rateLimit = waitlistRateLimiter.check(clientIp);
+  const rateLimit = await waitlistRateLimiter.check(clientIp);
 
   if (!rateLimit.allowed) {
     // Warn in server logs so the owner can spot abuse without PII exposure.

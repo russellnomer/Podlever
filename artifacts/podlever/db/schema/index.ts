@@ -37,3 +37,6 @@ export * from "./waitlist";
 
 // CRM audit log (references users via actorId; append-only)
 export * from "./crm-audit-log";
+
+// Rate-limit hit store (no FK dependencies; used by SlidingWindowRateLimiter)
+export * from "./rate-limit-hits";

@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-18
- * Last modified: 2026-07-18 by agent (Task #7 — added per-IP rate limiting)
+ * Last modified: 2026-07-19 by agent (Task #38 — rate limiter now async; added await)
  *
  * Route: GET /auth/login
  * Path: /auth/ (not /api/) to avoid proxy routing conflict with api-server artifact
@@ -32,6 +32,7 @@ import { getIronSession } from "iron-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getOidcConfig, getCallbackUrl, getPkceStateOptions } from "@/providers/auth";
 import { SlidingWindowRateLimiter } from "@/lib/rate-limiter";
+import { PostgresRateLimitStore } from "@/lib/rate-limit-store";
 import type { PkceState } from "@/providers/auth";
 
 // ─── Rate limiter ────────────────────────────────────────────────────────────
@@ -45,11 +46,14 @@ import type { PkceState } from "@/providers/auth";
  * Limit: 10 requests per IP per 60-second sliding window.
  * Rationale: A legitimate user triggers this endpoint once per login session.
  * 10 req/min provides headroom for browser retries while blocking floods.
+ *
+ * Backed by PostgresRateLimitStore so the limit persists across restarts.
+ * DB key format: "login:<ip>" (namespaced by PostgresRateLimitStore).
  */
-const loginRateLimiter = new SlidingWindowRateLimiter({
-  max:      10,
-  windowMs: 60_000, // 1 minute sliding window
-});
+const loginRateLimiter = new SlidingWindowRateLimiter(
+  { max: 10, windowMs: 60_000 }, // 1-minute sliding window
+  new PostgresRateLimitStore("login"),
+);
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
@@ -63,7 +67,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // generating noisy PKCE cookie churn.
 
   const clientIp  = SlidingWindowRateLimiter.extractIp(request.headers);
-  const rateLimit = loginRateLimiter.check(clientIp);
+  const rateLimit = await loginRateLimiter.check(clientIp);
 
   if (!rateLimit.allowed) {
     // Log at warn level so the owner can spot abuse patterns in workflow logs.

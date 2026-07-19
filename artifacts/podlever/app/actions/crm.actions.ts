@@ -416,7 +416,7 @@ export async function checkExportLimit(): Promise<CrmActionResult<ExportLimitDat
   }
 
   // Peek without consuming — returns current state without recording a hit
-  const result = exportRateLimiter.peek(owner.userId);
+  const result = await exportRateLimiter.peek(owner.userId);
 
   return {
     success: true,

@@ -108,7 +108,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Gate 2: Export rate limit (3 per 60 min per owner userId) ─────────────
-  const rateResult = consumeExportSlot(owner.userId);
+  const rateResult = await consumeExportSlot(owner.userId);
   if (!rateResult.allowed) {
     console.warn("[crm.export] rate limit exceeded", { userId: owner.userId });
     return NextResponse.json(
