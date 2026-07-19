@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-18
- * Last modified: 2026-07-18 by agent
+ * Last modified: 2026-07-19 by agent (Task #35 — add CRM audit + extended waitlist types)
  */
 
 export {
@@ -24,4 +24,12 @@ export {
   waitlistRepository,
   type SourceBreakdown,
   type WaitlistSummary,
+  type ListLeadsOpts,
+  type ListLeadsResult,
+  type LeadPatch,
 } from "./waitlist.repository";
+
+export {
+  CrmAuditRepository,
+  crmAuditRepository,
+} from "./crm-audit.repository";

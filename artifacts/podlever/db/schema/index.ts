@@ -34,3 +34,6 @@ export * from "./pipeline-events";
 
 // Marketing / growth — no FK dependencies
 export * from "./waitlist";
+
+// CRM audit log (references users via actorId; append-only)
+export * from "./crm-audit-log";

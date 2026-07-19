@@ -133,6 +133,30 @@ export class SlidingWindowRateLimiter {
   }
 
   /**
+   * peek — Return rate limit state for a key WITHOUT recording a hit.
+   *
+   * Used to show the remaining export count in the UI without consuming budget.
+   * Does NOT mutate the store — safe to call at any time.
+   *
+   * @param key  Per-requester identifier (IP or session userId).
+   * @returns    RateLimitResult with the current state (no hit recorded).
+   */
+  peek(key: string): RateLimitResult {
+    const now = Date.now();
+    const windowStart = now - this.windowMs;
+
+    const hits = (this.store.get(key) ?? []).filter((ts) => ts > windowStart);
+    const remaining = Math.max(0, this.max - hits.length);
+    const resetAt = hits.length > 0 ? hits[0] + this.windowMs : now + this.windowMs;
+
+    return {
+      allowed: remaining > 0,
+      remaining,
+      resetAt,
+    };
+  }
+
+  /**
    * cleanup — Remove Map entries whose all timestamps are outside the window.
    *
    * Called on a timer; also exposed for testing convenience.
