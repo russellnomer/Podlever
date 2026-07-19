@@ -38,7 +38,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- **Every artifact MUST have a `[services.production]` block in its `artifact.toml` before the first deployment.** Without it, the artifact is silently absent in production — no error, just HTTP 500. Development works fine because it uses `[services.development]`. This omission caused INC-2026-07-19-001 (4 failed builds, 7 tasks delivering zero production value). Verify presence before marking any artifact task complete.
+- **PodLever Route Handlers use `/rpc/` prefix, not `/api/`.** The workspace proxy intercepts all `/api/*` and routes to `api-server`. See `artifacts/podlever/app/api/README.md` and ADR-0001.
 
 ## Pointers
 
