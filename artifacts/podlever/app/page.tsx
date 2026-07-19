@@ -635,9 +635,15 @@ function PricingCtaSection() {
 
 function Footer() {
   const portfolio = [
-    { label: "SigmundFraud", href: "https://sigmundfx.replit.app", title: "AI trademark advisor" },
     { label: "CreatorVidPro", href: "https://creatorvidpro.replit.app", title: "Screenplay analysis" },
-    { label: "Cyber Mentor", href: "https://cybermentor.replit.app", title: "Cybersecurity training" },
+    { label: "Coverage Council", href: "https://coveragecouncil.com", title: "Insurance coverage guidance" },
+    { label: "RussellNomerMusic", href: "https://russellnomermusic.com", title: "Original music by Russell Nomer" },
+    { label: "ResourcefulReporter", href: "https://resourcefulreporter.com", title: "Journalism resources" },
+    { label: "PawsofKarma", href: "https://pawsofkarma.com", title: "Pet wellness" },
+    { label: "GuildsForAll", href: "https://guildsforall.com", title: "Community guilds platform" },
+    { label: "ThinkLikeACISO", href: "https://thinklikeaciso.com", title: "Cybersecurity leadership" },
+    { label: "MarketArchitect", href: "https://marketarchitect.com", title: "Marketing strategy tools" },
+    { label: "LotteryPro", href: "https://lotterypro.app", title: "Lottery analysis and tools" },
   ] as const;
 
   return (
