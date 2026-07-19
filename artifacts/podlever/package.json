@@ -15,7 +15,8 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "verify-fsm": "tsx scripts/verify-fsm.ts",
     "verify-auth": "tsx scripts/verify-auth.ts",
-    "verify-export-rate-limit": "tsx scripts/verify-export-rate-limit.ts"
+    "verify-export-rate-limit": "tsx scripts/verify-export-rate-limit.ts",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -38,11 +39,14 @@
     "@types/pg": "^8.20.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@vitest/runner": "^4.1.10",
     "drizzle-kit": "^0.31.10",
     "drizzle-zod": "^0.8.3",
     "postcss": "^8.5.6",
     "tailwindcss": "catalog:",
     "tsx": "catalog:",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.10"
   }
 }
