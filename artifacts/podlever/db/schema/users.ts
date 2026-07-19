@@ -118,6 +118,30 @@ export const users = pgTable("users", {
   utmCampaign: text("utm_campaign"),
   utmContent:  text("utm_content"),
 
+  /**
+   * Stripe customer ID — set during first Stripe Checkout.
+   * Used as the FK to look up subscriptions in the stripe schema.
+   * Unique constraint: one customer per PodLever user account.
+   */
+  stripeCustomerId: text("stripe_customer_id").unique(),
+
+  /** Active Stripe subscription ID. Null on free plan. */
+  stripeSubscriptionId: text("stripe_subscription_id"),
+
+  /**
+   * UTC end of the current paid billing period.
+   * Set by checkout.session.completed / customer.subscription.updated webhooks.
+   * Null for free plan users.
+   */
+  planPeriodEnd: timestamp("plan_period_end", { withTimezone: true }),
+
+  /**
+   * Grace period end after a failed payment.
+   * Set by invoice.payment_failed webhook; cleared on payment success.
+   * Features remain active during grace period; restricted after expiry.
+   */
+  paymentGraceUntil: timestamp("payment_grace_until", { withTimezone: true }),
+
   /** Row creation timestamp. Set once; never updated. */
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

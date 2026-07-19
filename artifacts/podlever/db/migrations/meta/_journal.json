@@ -50,6 +50,13 @@
       "when": 1784487775222,
       "tag": "0006_mushy_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784488355818,
+      "tag": "0007_nostalgic_wonder_man",
+      "breakpoints": true
     }
   ]
 }

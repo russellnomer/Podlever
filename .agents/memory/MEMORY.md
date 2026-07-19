@@ -5,3 +5,4 @@
 - [PodLever beta invite flow](podlever-beta-invite.md) — waitlist invite gate: replitUserId column, self-declaration email claim, session betaAccess field, middleware routing.
 - [PodLever usage metering](podlever-usage-metering.md) — usage_events table, per-user episode caps, tiers config, upload gate, admin view. users.plan column drives limits.
 - [PodLever analytics](podlever-analytics.md) — analytics_events table, trackServerEvent fire-and-forget, UTM cookie capture in middleware, admin funnel at /admin/analytics.
+- [PodLever Stripe integration](podlever-stripe.md) — credential resolution, esbuild __dirname migration gotcha, startup sequence, webhook handling, plan mapping.
