@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #13 — Landing page + waitlist)
+ * Last modified: 2026-07-19 by agent (Task #19 — bot flood protection)
  *
  * Server Actions for the public waitlist capture form on the landing and
  * pricing pages. Phase 1: stores email in the `waitlist` DB table only.
@@ -14,16 +14,36 @@
  * - Email is lowercased at insert; duplicate emails use ON CONFLICT DO NOTHING
  *   (silent deduplication — the user sees "success" either way).
  * - No PII logged: only the source label and outcome are logged.
- * - Rate limiting is NOT applied here — this is a low-frequency marketing
- *   action. If abuse is observed, add IP-based throttling in Phase 2.
+ * - Per-IP rate limiting: 5 submissions per 10 minutes (sliding window).
+ *   Uses the same SlidingWindowRateLimiter as the login route; the limit
+ *   is generous for human usage but stops automated floods cold.
+ *   The user-facing error message does NOT reveal the rate-limit parameters.
  */
 
 "use server";
 
+import { headers } from "next/headers";
 import { z } from "zod";
 import { db } from "@/db";
 import { waitlist } from "@/db/schema";
 import { sql } from "drizzle-orm";
+import { SlidingWindowRateLimiter } from "@/lib/rate-limiter";
+
+// ─── Rate limiter ────────────────────────────────────────────────────────────
+
+/**
+ * waitlistRateLimiter — module-level singleton shared across all requests in
+ * this Node.js process. In-memory state is intentionally lost on restart
+ * (limits reset, minor degradation, not a security failure).
+ *
+ * Limit: 5 submissions per IP per 10-minute sliding window.
+ * Rationale: A real person signs up once. 5 slots absorb browser double-
+ * submits and form retries without ever blocking a legitimate user.
+ */
+const waitlistRateLimiter = new SlidingWindowRateLimiter({
+  max:      5,
+  windowMs: 10 * 60 * 1_000, // 10-minute sliding window
+});
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
@@ -66,6 +86,31 @@ export async function joinWaitlist(
   _prevState: WaitlistResult | null,
   formData: FormData,
 ): Promise<WaitlistResult> {
+  // ── Rate limit check ───────────────────────────────────────────────────────
+  //
+  // Server Actions run server-side but don't have a NextRequest object.
+  // `headers()` from next/headers gives us the incoming request headers,
+  // from which we extract the client IP the same way the login route does.
+  //
+  // The user-facing message is intentionally vague — no limit parameters
+  // are disclosed to avoid helping a bot operator tune their attack.
+  const requestHeaders = await headers();
+  const clientIp = SlidingWindowRateLimiter.extractIp(requestHeaders);
+  const rateLimit = waitlistRateLimiter.check(clientIp);
+
+  if (!rateLimit.allowed) {
+    // Warn in server logs so the owner can spot abuse without PII exposure.
+    console.warn("[waitlist] rate limit exceeded", {
+      ip:      clientIp,
+      resetAt: new Date(rateLimit.resetAt).toISOString(),
+    });
+
+    return {
+      success: false,
+      error:   "Too many requests. Please wait a moment before trying again.",
+    };
+  }
+
   // ── Validate inputs ────────────────────────────────────────────────────────
   const parsed = WaitlistInput.safeParse({
     email:  formData.get("email"),
