@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# margin-health-check.yml
+#
+# Monthly margin health check — runs on the 1st of every month at 09:00 UTC.
+# Detects AI provider rate hikes before they silently erode gross margin.
+#
+# Alert delivery:
+#   GitHub sends a failure-notification email to the repo owner whenever this
+#   job exits non-zero (exit 1 = GM < 80% WARNING, exit 2 = GM < 70% ERROR).
+#   No extra notification wiring is needed.
+#
+# Manual trigger:
+#   workflow_dispatch lets Russell run the check on-demand from the Actions tab
+#   (e.g. after a provider announces a pricing change mid-month).
+#
+# Reference: docs/pricing/model-routing-policy.md — Model Selection Audit Cadence
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Margin Health Check
+
+on:
+  # First of every month at 09:00 UTC
+  schedule:
+    - cron: "0 9 1 * *"
+
+  # On-demand trigger from the Actions tab (no inputs required)
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: "Force staleness check even if rates cache is fresh (--refresh)"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  margin-check:
+    name: "Managed AI — Margin Health Check"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Node.js + pnpm ──────────────────────────────────────────────────────
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.26.1"
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      # ── Install workspace dependencies (scripts package only) ───────────────
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @workspace/scripts
+
+      # ── Run the margin health check ─────────────────────────────────────────
+      # Exit codes (from margin-health-check.ts):
+      #   0 — GM ≥ 80%  (healthy)
+      #   1 — GM 70–80% (WARNING — job fails, GitHub emails repo owner)
+      #   2 — GM < 70%  (ERROR   — job fails, GitHub emails repo owner)
+      #   3 — Script error (missing rates file, parse failure)
+      - name: Run margin health check
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ github.event.inputs.refresh }}" = "true" ]; then
+            EXTRA_FLAGS="--refresh"
+          fi
+          pnpm --filter @workspace/scripts margin-check $EXTRA_FLAGS
+
+      # ── Summary ─────────────────────────────────────────────────────────────
+      # Runs even when the check step fails so the summary is always visible.
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## Margin Health Check — $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "See the step log above for the full COGS breakdown and GM result." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "If this job failed, review provider rates and consult:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/pricing/model-routing-policy.md\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/pricing/pricing-model-v2.1-approved.md\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`.agents/skills/unit-economics-guardrail/rates.json\`" >> $GITHUB_STEP_SUMMARY

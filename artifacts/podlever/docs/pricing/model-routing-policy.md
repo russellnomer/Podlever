@@ -145,7 +145,27 @@ pnpm margin-check --stamp-reviewed  # update last_updated timestamp after manual
 | `2` | GM < 70% — ERROR, pricing action required |
 | `3` | Script error (missing file, parse failure) |
 
-**Recommended cadence:** Run monthly. Wire to a cron job or calendar reminder on the first of each month. The script is safe to run at any frequency — it is read-only unless `--stamp-reviewed` is passed.
+**Recommended cadence:** Run monthly. The check is automated via GitHub Actions (see below). The script is safe to run at any frequency — it is read-only unless `--stamp-reviewed` is passed.
+
+### Monthly Automation — GitHub Actions
+
+The check runs automatically on the **1st of every month at 09:00 UTC** via
+`.github/workflows/margin-health-check.yml`.
+
+**How it works:**
+1. GitHub Actions checks out the repository and installs `@workspace/scripts` dependencies.
+2. Runs `pnpm margin-check` against the committed `rates.json`.
+3. If exit code is non-zero (GM < 80% or script error), GitHub marks the job **failed** and emails a failure notification to the repository owner — no extra alerting wiring needed.
+
+**On-demand run:** Use the "Run workflow" button in the Actions tab to trigger a manual check at any time (e.g. after a provider announces a mid-month price change). Pass `refresh: true` to force the provider URL reachability check even when the cache is still fresh.
+
+**After a rate change is confirmed:**
+```bash
+# 1. Update rates.json manually (provider pages are not machine-parseable)
+# 2. Stamp the reviewed date
+pnpm margin-check --stamp-reviewed
+# 3. Commit the updated rates.json
+```
 
 ---
 
