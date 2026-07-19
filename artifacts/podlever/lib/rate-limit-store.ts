@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19 by agent (Task #38 — durable rate-limit state)
- * Last modified: 2026-07-19 by agent (Task #38 — atomic check-and-record via pg row lock)
+ * Last modified: 2026-07-19 by agent (Task #46 — add pruneStaleRows for periodic cleanup)
  *
  * HUMAN REVIEW NOTES:
  * This module defines the RateLimitStore interface and two concrete implementations:
@@ -27,7 +27,7 @@
  *   - peek() is read-only and therefore race-free; it does not need locking.
  */
 
-import { eq, sql as drizzleSql } from "drizzle-orm";
+import { eq, sql as drizzleSql, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { rateLimitHits } from "@/db/schema";
 
@@ -167,6 +167,37 @@ export class PostgresRateLimitStore implements RateLimitStore {
       .where(eq(rateLimitHits.key, dbKey))
       .limit(1);
     return row[0]?.hitTimestamps ?? [];
+  }
+
+  // ─── Static maintenance helpers ─────────────────────────────────────────────
+
+  /**
+   * pruneStaleRows — Delete rows whose updated_at is older than `cutoffMs`.
+   *
+   * Called by the /rpc/cron/prune-rate-limits Route Handler once per hour.
+   * Rows that haven't been touched since before the cutoff have all their
+   * in-window timestamps expired, so they will never be read again by the
+   * limiter — deleting them is safe.
+   *
+   * @param cutoffMs  Unix-ms timestamp; rows with updated_at before this are deleted.
+   * @returns         Number of rows deleted.
+   *
+   * Security note: only the /rpc/cron route calls this — it is authenticated
+   * via CRON_SECRET Bearer token before invoking this method.
+   */
+  static async pruneStaleRows(cutoffMs: number): Promise<number> {
+    // Convert Unix-ms to a JS Date for the Drizzle/pg timestamp column.
+    const cutoffDate = new Date(cutoffMs);
+
+    // Drizzle's delete() with lt() compiles to:
+    //   DELETE FROM rate_limit_hits WHERE updated_at < $1
+    // The BRIN index on updated_at (migration 0002) keeps this fast.
+    const result = await db
+      .delete(rateLimitHits)
+      .where(lt(rateLimitHits.updatedAt, cutoffDate))
+      .returning({ key: rateLimitHits.key });
+
+    return result.length;
   }
 
   /**

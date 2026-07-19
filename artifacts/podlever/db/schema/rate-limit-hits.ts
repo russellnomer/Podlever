@@ -3,7 +3,7 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19 by agent (Task #38 — durable rate-limit state)
- * Last modified: 2026-07-19
+ * Last modified: 2026-07-19 by agent (Task #46 — periodic cleanup via /rpc/cron/prune-rate-limits)
  *
  * HUMAN REVIEW NOTES:
  * This table backs the SlidingWindowRateLimiter so that hit timestamps survive
@@ -22,9 +22,10 @@
  * column helpers have full support for typed JSONB, whereas native pg arrays
  * require a custom type mapping. The JSONB overhead is negligible for this payload.
  *
- * Retention: rows with empty hit_timestamps arrays are harmless (they hold zero
- * bytes of hit data). A periodic DELETE WHERE hit_timestamps = '[]' could be
- * added in Phase 1B if the table accumulates stale rows.
+ * Retention: rows with empty hit_timestamps arrays are harmless but accumulate
+ * over time. A scheduled cleanup job at /rpc/cron/prune-rate-limits deletes rows
+ * where updated_at < NOW() - INTERVAL '2 hours' (2× the longest configured window).
+ * See db/README.md § "rate_limit_hits — Retention and Cleanup" for setup instructions.
  */
 
 import { pgTable, text, jsonb, timestamp } from "drizzle-orm/pg-core";
