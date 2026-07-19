@@ -116,6 +116,37 @@ Rates change. This policy must be reviewed when:
 
 Review process: re-run the unit economics model, update `rates.json`, update this document, update CHANGELOG.
 
+### Automated Margin Health Check
+
+`scripts/src/margin-health-check.ts` automates the review trigger. Run it from the workspace root:
+
+```bash
+pnpm margin-check              # standard run
+pnpm margin-check --refresh    # force staleness check + URL verification even if cache is fresh
+pnpm margin-check --stamp-reviewed  # update last_updated timestamp after manual rate review
+```
+
+**What the script does:**
+1. Reads `.agents/skills/unit-economics-guardrail/rates.json` and checks `last_updated` against the 30-day TTL.
+2. If stale: verifies provider pricing URLs are reachable and prints manual-review instructions (provider pages are JavaScript SPAs — rates cannot be auto-parsed; human review is required).
+3. Recomputes expected COGS/episode for the primary stack:
+   - **Transcription:** AssemblyAI Universal-3.5 Pro
+   - **LLM:** Anthropic Haiku 4.5 with mandatory prompt caching (10 asset calls, 12 k transcript tokens, 500 instruction tokens/call, 800 output tokens/call)
+   - **Overhead:** $0.22/episode (infra + support)
+4. Logs a `WARNING` if projected gross margin < 80%; logs an `ERROR` if < 70%.
+5. Exits non-zero (`1` = warning, `2` = error) if GM < 80%, so it can be used as a CI gate or cron alert.
+
+**Exit codes:**
+
+| Code | Meaning |
+|---|---|
+| `0` | GM ≥ 80% — healthy |
+| `1` | GM 70–80% — WARNING, review pricing |
+| `2` | GM < 70% — ERROR, pricing action required |
+| `3` | Script error (missing file, parse failure) |
+
+**Recommended cadence:** Run monthly. Wire to a cron job or calendar reminder on the first of each month. The script is safe to run at any frequency — it is read-only unless `--stamp-reviewed` is passed.
+
 ---
 
 ## Reference
