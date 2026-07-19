@@ -19,7 +19,7 @@
  * user-supplied strings into SQL fragments.
  */
 
-import { and, asc, count, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { waitlist, type WaitlistEntry, LEAD_STATUSES, type LeadStatus } from "@/db/schema";
 
@@ -326,6 +326,51 @@ export class WaitlistRepository {
       .from(waitlist)
       .where(where)
       .orderBy(asc(waitlist.createdAt));
+  }
+
+  /**
+   * bulkUpdate — Update the status of multiple waitlist entries in one query.
+   *
+   * Uses a single UPDATE … WHERE id = ANY($1) statement via Drizzle's inArray
+   * helper — no row-by-row round trips.
+   *
+   * Security / defence-in-depth:
+   *   - Status validated against LEAD_STATUSES before reaching this method.
+   *   - IDs passed as a parameterized binding; no string interpolation.
+   *   - Returns only the rows that were actually updated so the caller can
+   *     audit the exact set that changed (handles the case where some IDs
+   *     no longer exist in the table).
+   *
+   * @param ids    — Non-empty array of UUID strings (validated by the action layer)
+   * @param patch  — Currently only `status` is supported for bulk updates
+   * @returns      The updated WaitlistEntry rows
+   * @throws       Error if ids array is empty (guard in the action layer too)
+   */
+  async bulkUpdate(
+    ids: string[],
+    patch: Pick<LeadPatch, "status">,
+  ): Promise<WaitlistEntry[]> {
+    if (ids.length === 0) {
+      throw new Error("bulkUpdate called with empty ids array");
+    }
+
+    if (patch.status === undefined) {
+      throw new Error("bulkUpdate: patch must include at least one field (status)");
+    }
+
+    // Defence-in-depth: validate status is in the allowed set.
+    // The action layer validates first; this is a second line of defence.
+    if (!LEAD_STATUSES.includes(patch.status as LeadStatus)) {
+      throw new Error(`Invalid lead status: ${patch.status}`);
+    }
+
+    const updated = await db
+      .update(waitlist)
+      .set({ status: patch.status, updatedAt: new Date() })
+      .where(inArray(waitlist.id, ids))
+      .returning();
+
+    return updated;
   }
 
   /**

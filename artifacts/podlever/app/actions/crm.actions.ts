@@ -88,6 +88,21 @@ const UpdateLeadSchema = z.object({
     .optional(),
 });
 
+/**
+ * BulkUpdateLeadsSchema — validates the input for bulkUpdateLeads.
+ *
+ * Constraints:
+ *   - ids: 1–500 UUIDs (upper bound prevents accidentally updating every lead)
+ *   - status: required for bulk updates (notes cannot be bulk-edited)
+ */
+const BulkUpdateLeadsSchema = z.object({
+  ids: z
+    .array(z.string().uuid("Each lead ID must be a valid UUID"))
+    .min(1, "Select at least one lead")
+    .max(500, "Cannot bulk-update more than 500 leads at once"),
+  status: z.enum(LEAD_STATUSES_ENUM, { required_error: "Status is required for bulk updates" }),
+});
+
 // ─── Action result types ───────────────────────────────────────────────────────
 
 export type CrmActionResult<T = void> =
@@ -284,6 +299,103 @@ export async function updateLead(
   } catch (err) {
     console.error("[crm.updateLead] error:", (err as Error).message);
     return { success: false, error: "Failed to update lead" };
+  }
+}
+
+// ─── Result type for bulk update ──────────────────────────────────────────────
+
+export interface BulkUpdateResult {
+  /** Number of leads that were actually updated (may be < ids.length if some were deleted). */
+  updatedCount: number;
+}
+
+/**
+ * bulkUpdateLeads — Update the status of multiple leads in a single operation.
+ *
+ * Security:
+ *   - requireOwner() first — no exceptions
+ *   - Input validated via BulkUpdateLeadsSchema (1–500 UUIDs, valid status)
+ *   - Captures the distinct set of "before" statuses for the audit log
+ *   - Writes a single lead_updated audit entry covering all affected IDs;
+ *     count is recorded in meta — no email addresses in the log
+ *
+ * Audit meta shape:
+ *   { bulk: true, count: N, statusBefore: "mixed|<status>", statusAfter: "<status>" }
+ *
+ * @param rawInput — { ids: string[], status: string }
+ */
+export async function bulkUpdateLeads(
+  rawInput: unknown,
+): Promise<CrmActionResult<BulkUpdateResult>> {
+  // ── Gate 1: authentication + authorization ──────────────────────────────────
+  let owner;
+  try {
+    owner = await requireOwner();
+  } catch {
+    const meta = await getRequestMeta();
+    await crmAuditRepository.insert({
+      actorId:   null,
+      action:    "auth_denied",
+      leadIds:   null,
+      meta:      { reason: "guard_failed", context: "bulkUpdateLeads" },
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    }).catch(() => {});
+    return { success: false, error: "Unauthorized" };
+  }
+
+  // ── Gate 2: input validation ────────────────────────────────────────────────
+  const parsed = BulkUpdateLeadsSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" };
+  }
+
+  const { ids, status } = parsed.data;
+
+  try {
+    // Fetch current statuses for audit delta (before the update).
+    // We only need the status field; use getById equivalent via list.
+    // Fetch all target rows to capture old statuses — no emails logged.
+    const beforeRows = await Promise.all(
+      // Fetch in a single query using the repository's list method would require
+      // an inArray filter which isn't exposed there; use individual getById calls
+      // batched in parallel. For up to 500 IDs this is acceptable (single tx not required).
+      ids.map((id) => waitlistRepository.getById(id)),
+    );
+
+    // Determine the "before" status summary — avoid logging every individual status.
+    const distinctBefore = [...new Set(
+      beforeRows.flatMap((r) => (r ? [r.status] : [])),
+    )];
+    const statusBeforeSummary =
+      distinctBefore.length === 0 ? "unknown" :
+      distinctBefore.length === 1 ? distinctBefore[0] :
+      "mixed";
+
+    // Perform the bulk update — single UPDATE … WHERE id = ANY($1).
+    const updated = await waitlistRepository.bulkUpdate(ids, { status: status as LeadStatus });
+
+    // ── Audit log: single entry for the entire bulk operation ─────────────────
+    // Records the count and status transition; no PII (no emails) in meta.
+    const reqMeta = await getRequestMeta();
+    await crmAuditRepository.insert({
+      actorId:   owner.userId,
+      action:    "lead_updated",
+      leadIds:   ids,
+      meta: {
+        bulk:         true,
+        count:        updated.length,
+        statusBefore: statusBeforeSummary,
+        statusAfter:  status,
+      },
+      ipAddress: reqMeta.ipAddress,
+      userAgent: reqMeta.userAgent,
+    }).catch(() => {});
+
+    return { success: true, data: { updatedCount: updated.length } };
+  } catch (err) {
+    console.error("[crm.bulkUpdateLeads] error:", (err as Error).message);
+    return { success: false, error: "Failed to bulk-update leads" };
   }
 }
 
