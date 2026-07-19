@@ -3,59 +3,74 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #13 — Landing page + pricing)
+ * Last modified: 2026-07-19 by agent (Task #58 — Wire pricing page to Stripe Checkout)
  *
- * Server Component. Renders the full pricing page with:
- *   - 3-tier pricing cards (Free / Pro / Agency)
- *   - Annual/monthly toggle (client interaction via URL param)
- *   - Feature comparison table
- *   - Waitlist capture for paid tiers (Stripe not yet wired)
- *   - CTA to auth flow for free tier
+ * Async Server Component. On each request:
+ *   1. Reads the `?upgrade=` search param — if present and the user is
+ *      logged in, redirects immediately to /api/billing/upgrade so the
+ *      billing dashboard "Upgrade" links never touch client JS.
+ *   2. Fetches live Stripe price IDs by querying products filtered on
+ *      metadata.plan_slug — no hardcoded price IDs.
+ *   3. Renders Founding Member pricing with CheckoutButton replacing
+ *      WaitlistForm on Pro and Agency cards.
+ *   4. Falls back to a mailto CTA if Stripe is unreachable.
  *
- * Pricing (annual rates shown; monthly is 1.4×):
+ * Pricing (annual rates; monthly is ~1.4×):
  *   Free    → $0/mo      (1 episode/month, core assets only)
- *   Pro     → $29/mo     (10 episodes/month, all assets, priority processing)
- *   Agency  → $97/mo     (unlimited, white-label, team seats)
+ *   Pro     → $29/mo     ($348/yr — Founding Member price-locked forever)
+ *   Agency  → $97/mo     ($1,164/yr — Founding Member price-locked forever)
  *
  * HUMAN REVIEW NOTES:
- * - CTA buttons on paid tiers link to the waitlist form (Stripe not wired yet).
- * - Free tier CTA links to /auth/login to start the auth flow.
- * - Annual/monthly toggle is a PricingToggle Client Component (interactive).
- * - The pricing page is intentionally standalone — no auth check needed.
+ * - CheckoutButton is a Client Component — reads localStorage "podlever_billing_period"
+ *   to pick the right Stripe price ID (annual vs monthly) without prop drilling.
+ * - The `?upgrade=pro|agency` flow auto-fires a server-side redirect to
+ *   /api/billing/upgrade — no client JS needed for billing-dashboard CTAs.
+ * - If Stripe product fetch fails, `proPrices` / `agencyPrices` will be null and
+ *   the cards fall back to a mailto CTA (graceful degradation).
  */
 
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PricingToggle } from "@/app/components/PricingToggle";
-import { WaitlistForm } from "@/app/components/WaitlistForm";
+import { CheckoutButton } from "@/app/components/CheckoutButton";
+import { getAuthUser } from "@/providers/auth";
+import { getStripeClient } from "@/lib/stripe";
 
 // ─── Page metadata ────────────────────────────────────────────────────────────
 
 export const metadata: Metadata = {
-  title: "Pricing — PodLever Podcast Content Engine",
+  title: "Founding Member Pricing — PodLever Podcast Content Engine",
   description:
-    "Start free. Upgrade when you need more. PodLever turns raw episodes into transcripts, show notes, blog posts, and social clips — from $0/month.",
+    "Lock in your price forever as a Founding Member. PodLever turns raw episodes into transcripts, show notes, blog posts, and social clips — from $0/month.",
   alternates: { canonical: "/pricing" },
   openGraph: {
-    title: "Pricing — PodLever",
+    title: "Founding Member Pricing — PodLever",
     description:
-      "Free, Pro ($29/mo), and Agency ($97/mo) plans. One recording. A complete content library.",
+      "Founding Member rates: Pro ($29/mo) and Agency ($97/mo) — price locked forever, cancel anytime.",
     url: "/pricing",
   },
 };
 
-// ─── Pricing data ──────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const MONTHLY_PRICES = {
-  free:   0,
-  pro:    41,   // Monthly rate when billed monthly
-  agency: 136,  // Monthly rate when billed monthly
-} as const;
+/**
+ * Stripe price IDs for a single tier — one for annual billing, one for monthly.
+ * Both are required to render the CheckoutButton. If either is missing, the
+ * card falls back to a mailto CTA.
+ */
+interface TierPrices {
+  annual: string;   // Stripe price ID for annual billing
+  monthly: string;  // Stripe price ID for monthly billing
+}
 
-const ANNUAL_PRICES = {
-  free:   0,
-  pro:    29,   // Monthly rate when billed annually ($348/yr)
-  agency: 97,   // Monthly rate when billed annually ($1,164/yr)
+// ─── Static pricing data ──────────────────────────────────────────────────────
+
+/** Monthly-equivalent dollar amounts shown in the UI for each billing period. */
+const DISPLAY_PRICES = {
+  free:   { annual: 0,  monthly: 0   },
+  pro:    { annual: 29, monthly: 41  },
+  agency: { annual: 97, monthly: 136 },
 } as const;
 
 type Tier = "free" | "pro" | "agency";
@@ -91,6 +106,7 @@ const FEATURES: Array<{
       { label: "Asset download",          free: true,   pro: true,           agency: true          },
       { label: "Revision requests",       free: "1/ep", pro: "3/ep",         agency: "Unlimited"   },
       { label: "Team seats",              free: "1",    pro: "1",            agency: "5"           },
+      { label: "Roadmap voting",          free: false,  pro: true,           agency: true          },
       { label: "White-label exports",     free: false,  pro: false,          agency: true          },
       { label: "API access",              free: false,  pro: false,          agency: true          },
     ],
@@ -104,22 +120,96 @@ const FEATURES: Array<{
   },
 ];
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+// ─── Stripe price fetch ───────────────────────────────────────────────────────
 
 /**
- * PricingPage — Pricing tiers and feature comparison (Server Component).
+ * fetchTierPrices — fetch annual + monthly Stripe price IDs for a plan slug.
  *
- * Reads `billing` search param (annual | monthly) to set initial toggle state.
- * The PricingToggle client component handles the interactive switch.
+ * Filters Stripe products by `metadata.plan_slug` (e.g. "pro", "agency"),
+ * then returns the two active prices tagged annual/monthly in their metadata.
+ * Returns null if the product isn't found or Stripe is unreachable.
+ *
+ * @param slug - The plan_slug value set in Stripe product metadata.
  */
-export default function PricingPage({
+async function fetchTierPrices(slug: string): Promise<TierPrices | null> {
+  try {
+    const stripe = await getStripeClient();
+
+    // List products filtered by metadata — Stripe supports direct metadata filters.
+    const products = await stripe.products.list({
+      active: true,
+      limit: 10,
+    });
+
+    // Find the product whose metadata.plan_slug matches the requested slug.
+    const product = products.data.find(
+      (p: { metadata?: Record<string, string> }) => p.metadata?.plan_slug === slug,
+    );
+    if (!product) return null;
+
+    // Fetch active prices for this product.
+    const prices = await stripe.prices.list({
+      product: product.id,
+      active: true,
+      limit: 10,
+    });
+
+    // Pick out the annual and monthly prices by their metadata.billing_period tag.
+    type PriceWithMeta = { id: string; metadata?: Record<string, string> };
+    const annualPrice  = prices.data.find((p: PriceWithMeta) => p.metadata?.billing_period === "annual");
+    const monthlyPrice = prices.data.find((p: PriceWithMeta) => p.metadata?.billing_period === "monthly");
+
+    if (!annualPrice || !monthlyPrice) return null;
+
+    return { annual: annualPrice.id, monthly: monthlyPrice.id };
+  } catch {
+    // Stripe is unreachable — cards will fall back to a mailto CTA.
+    return null;
+  }
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+/**
+ * PricingPage — Founding Member pricing with live Stripe Checkout (Server Component).
+ *
+ * Handles the `?upgrade=<plan>` auto-trigger: logged-in users who arrive from
+ * the billing dashboard are redirected server-side to /api/billing/upgrade
+ * so no client JS is required for the upgrade CTA.
+ */
+export default async function PricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ billing?: string }>;
+  searchParams: Promise<{ billing?: string; upgrade?: string; error?: string }>;
 }) {
-  // We don't need to await searchParams since PricingToggle is a client component
-  // that reads window.location to handle the toggle state.
-  void searchParams;
+  const params = await searchParams;
+
+  // ── Auto-trigger: ?upgrade=pro or ?upgrade=agency ─────────────────────────
+  // Billing dashboard links here with ?upgrade=<plan>. If the user is logged
+  // in, immediately redirect them to the upgrade API route to create a Checkout
+  // session server-side without any client JS interaction.
+  if (params.upgrade === "pro" || params.upgrade === "agency") {
+    const user = await getAuthUser();
+    if (user) {
+      // Pass through the billing period if the dashboard sent one.
+      const billingParam = params.billing ? `&billing=${params.billing}` : "";
+      redirect(`/api/billing/upgrade?plan=${params.upgrade}${billingParam}`);
+    }
+    // Not logged in — fall through and render the page normally.
+    // The user will see the card and can log in before clicking Checkout.
+  }
+
+  // ── Fetch live Stripe price IDs ───────────────────────────────────────────
+  // Run both fetches in parallel to keep render latency low.
+  const [proPrices, agencyPrices] = await Promise.all([
+    fetchTierPrices("pro"),
+    fetchTierPrices("agency"),
+  ]);
+
+  // ── Checkout error banner copy ────────────────────────────────────────────
+  const checkoutError = params.error === "checkout"
+    ? "We couldn't start checkout. Please try again or email hi@podlever.com."
+    : null;
 
   return (
     <div className="min-h-screen bg-[#0D0D0F] text-zinc-100">
@@ -145,6 +235,16 @@ export default function PricingPage({
         </div>
       </nav>
 
+      {/* Checkout error banner */}
+      {checkoutError && (
+        <div
+          role="alert"
+          className="bg-red-950/60 border-b border-red-800/60 px-6 py-3 text-center text-sm text-red-300"
+        >
+          {checkoutError}
+        </div>
+      )}
+
       {/* Header */}
       <section className="relative overflow-hidden pt-20 pb-16 px-6 text-center" aria-labelledby="pricing-heading">
         {/* Ambient glow */}
@@ -152,18 +252,36 @@ export default function PricingPage({
           <div className="w-[500px] h-[300px] rounded-full bg-amber-500/6 blur-[100px] mt-8" />
         </div>
         <div className="relative max-w-3xl mx-auto space-y-5">
-          <p className="text-amber-400 text-sm font-semibold uppercase tracking-wider">Pricing</p>
+          <p className="text-amber-400 text-sm font-semibold uppercase tracking-wider">
+            Founding Member Pricing
+          </p>
           <h1
             id="pricing-heading"
             className="text-5xl sm:text-6xl font-bold tracking-tight text-white leading-tight"
           >
-            Start free.{" "}
-            <span className="text-amber-400">Scale</span> when you&apos;re ready.
+            Lock in your rate.{" "}
+            <span className="text-amber-400">Forever.</span>
           </h1>
           <p className="text-zinc-400 text-lg leading-relaxed max-w-xl mx-auto">
-            A free tier that delivers real value, Pro for serious podcasters,
-            and Agency for production teams. No hidden fees.
+            Founding Members get today&apos;s price locked for the life of their
+            subscription. As PodLever grows, prices will rise — yours won&apos;t.
           </p>
+          {/* Founding Member value props */}
+          <div className="flex flex-wrap justify-center gap-3 pt-2">
+            {[
+              "Price locked forever",
+              "Cancel anytime",
+              "Roadmap voting",
+              "Funds active development",
+            ].map((prop) => (
+              <span
+                key={prop}
+                className="px-3 py-1.5 rounded-full border border-amber-500/20 bg-amber-500/8 text-amber-300 text-xs font-medium"
+              >
+                {prop}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -177,17 +295,16 @@ export default function PricingPage({
 
           {/* Tier cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+            {/* Free */}
             <TierCard
               tier="free"
               name="Free"
               tagline="Try PodLever risk-free"
-              annualPrice={ANNUAL_PRICES.free}
-              monthlyPrice={MONTHLY_PRICES.free}
+              displayPrices={DISPLAY_PRICES.free}
               highlight={false}
-              ctaLabel="Start for free"
-              ctaHref="/auth/login"
-              ctaVariant="outline"
               badge={null}
+              cta={{ kind: "link", href: "/auth/login", label: "Start for free", variant: "outline" }}
               perks={[
                 "1 episode per month",
                 "Transcript + show notes",
@@ -196,43 +313,51 @@ export default function PricingPage({
                 "Community support",
               ]}
             />
+
+            {/* Pro */}
             <TierCard
               tier="pro"
               name="Pro"
               tagline="For serious podcasters"
-              annualPrice={ANNUAL_PRICES.pro}
-              monthlyPrice={MONTHLY_PRICES.pro}
+              displayPrices={DISPLAY_PRICES.pro}
               highlight={true}
-              ctaLabel="Join Pro Waitlist"
-              ctaHref={null}
-              ctaVariant="primary"
-              badge="Most popular"
+              badge="Founding Member"
+              cta={
+                proPrices
+                  ? { kind: "checkout", prices: proPrices, label: "Become a Founding Member", variant: "primary" }
+                  : { kind: "mailto", label: "Contact us to join Pro", variant: "primary" }
+              }
               perks={[
                 "10 episodes per month",
                 "All 8 output assets",
                 "Priority processing queue",
                 "4-hour max file duration",
                 "3 revision requests per episode",
+                "Roadmap voting rights",
                 "Email support",
               ]}
             />
+
+            {/* Agency */}
             <TierCard
               tier="agency"
               name="Agency"
               tagline="For production teams"
-              annualPrice={ANNUAL_PRICES.agency}
-              monthlyPrice={MONTHLY_PRICES.agency}
+              displayPrices={DISPLAY_PRICES.agency}
               highlight={false}
-              ctaLabel="Join Agency Waitlist"
-              ctaHref={null}
-              ctaVariant="outline"
               badge={null}
+              cta={
+                agencyPrices
+                  ? { kind: "checkout", prices: agencyPrices, label: "Become a Founding Member", variant: "outline" }
+                  : { kind: "mailto", label: "Contact us to join Agency", variant: "outline" }
+              }
               perks={[
                 "Unlimited episodes",
                 "All 8 output assets",
                 "Priority processing",
                 "5 team seats",
                 "Unlimited revisions",
+                "Roadmap voting rights",
                 "White-label exports",
                 "API access",
                 "Priority email support (24h SLA)",
@@ -244,7 +369,7 @@ export default function PricingPage({
           <p className="text-center text-zinc-500 text-sm">
             Annual billing saves up to{" "}
             <span className="text-amber-400 font-medium">29%</span> vs. monthly.
-            Cancel anytime.
+            Cancel anytime. Founding Member price locked for life.
           </p>
         </div>
       </section>
@@ -274,42 +399,42 @@ export default function PricingPage({
                 </tr>
               </thead>
               {FEATURES.map((group) => (
-                  <tbody key={group.category} className="divide-y divide-zinc-800/40">
-                    {/* Category header */}
-                    <tr className="bg-zinc-900/30">
-                      <td
-                        colSpan={4}
-                        className="px-6 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider"
-                      >
-                        {group.category}
+                <tbody key={group.category} className="divide-y divide-zinc-800/40">
+                  {/* Category header */}
+                  <tr className="bg-zinc-900/30">
+                    <td
+                      colSpan={4}
+                      className="px-6 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider"
+                    >
+                      {group.category}
+                    </td>
+                  </tr>
+                  {/* Feature rows */}
+                  {group.items.map((item) => (
+                    <tr
+                      key={item.label}
+                      className="hover:bg-zinc-900/30 transition-colors"
+                    >
+                      <td className="px-6 py-3.5 text-zinc-300">{item.label}</td>
+                      <td className="px-4 py-3.5 text-center">
+                        <FeatureCell value={item.free} />
+                      </td>
+                      <td className="px-4 py-3.5 text-center bg-amber-500/3">
+                        <FeatureCell value={item.pro} isHighlight />
+                      </td>
+                      <td className="px-4 py-3.5 text-center">
+                        <FeatureCell value={item.agency} />
                       </td>
                     </tr>
-                    {/* Feature rows */}
-                    {group.items.map((item) => (
-                      <tr
-                        key={item.label}
-                        className="hover:bg-zinc-900/30 transition-colors"
-                      >
-                        <td className="px-6 py-3.5 text-zinc-300">{item.label}</td>
-                        <td className="px-4 py-3.5 text-center">
-                          <FeatureCell value={item.free} />
-                        </td>
-                        <td className="px-4 py-3.5 text-center bg-amber-500/3">
-                          <FeatureCell value={item.pro} isHighlight />
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          <FeatureCell value={item.agency} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                ))}
+                  ))}
+                </tbody>
+              ))}
             </table>
           </div>
         </div>
       </section>
 
-      {/* FAQ teaser */}
+      {/* FAQ */}
       <section className="py-20 px-6 border-t border-zinc-800/40" aria-labelledby="faq-heading">
         <div className="max-w-3xl mx-auto space-y-8">
           <h2
@@ -321,20 +446,24 @@ export default function PricingPage({
           <div className="space-y-4">
             {[
               {
+                q: "Why pay for something still being built?",
+                a: "Because Founding Members get two things money can't buy later: a price that never increases and a direct line to shape what gets built. Your subscription covers infrastructure, AI processing costs, and active development. In return, you get today's rate locked forever — and roadmap voting so the features you care about get prioritised.",
+              },
+              {
+                q: "What does 'price locked forever' actually mean?",
+                a: "If you subscribe today at $29/mo, you pay $29/mo for as long as you stay subscribed — even if Pro goes to $49, $69, or more in the future. The price lock holds until you cancel. If you cancel and re-subscribe later, you rejoin at the current rate.",
+              },
+              {
+                q: "Can I cancel anytime?",
+                a: "Yes. No lock-in, no cancellation fees. Cancel from your billing dashboard and you keep access until the end of your paid period. Annual plans are non-refundable after the first 14 days, but you're never trapped.",
+              },
+              {
                 q: "When does the free tier expire?",
                 a: "It doesn't. The free tier is permanently free — 1 episode per month, every month. No trial period, no credit card required.",
               },
               {
-                q: "What happens when I hit my episode limit?",
-                a: "You'll see a clear message in your dashboard. You can upgrade at any time or wait for the next month's allowance to reset.",
-              },
-              {
-                q: "Are Stripe payments live yet?",
-                a: "Pro and Agency tiers are in early access. Join the waitlist and we'll notify you when billing is live — with a launch discount for waitlist members.",
-              },
-              {
                 q: "What audio/video formats do you support?",
-                a: "MP3, MP4, WAV, M4A, and MOV. Files up to 4 hours in length (1 hour on Free). More formats coming based on user demand.",
+                a: "MP3, MP4, WAV, M4A, and MOV. Files up to 4 hours in length (1 hour on Free). More formats coming — Founding Members vote on what comes next.",
               },
             ].map((faq) => (
               <div
@@ -359,8 +488,8 @@ export default function PricingPage({
             Ready to reclaim your week?
           </h2>
           <p className="text-zinc-400 leading-relaxed">
-            Start free today. No credit card, no commitment.
-            Join the waitlist to be first in line for Pro and Agency access.
+            Start free today — no credit card, no commitment.
+            Lock in Founding Member pricing before rates change.
           </p>
           <div className="flex flex-col items-center gap-4">
             <Link
@@ -369,12 +498,17 @@ export default function PricingPage({
             >
               Start free — no card needed
             </Link>
-            <WaitlistForm
-              source="pricing_bottom"
-              variant="default"
-              placeholder="Email for Pro/Agency waitlist"
-              buttonLabel="Join Waitlist"
-            />
+            {proPrices && (
+              <div className="w-full max-w-xs">
+                <CheckoutButton
+                  tier="pro"
+                  annualPriceId={proPrices.annual}
+                  monthlyPriceId={proPrices.monthly}
+                  label="Join Pro as Founding Member"
+                  variant="outline"
+                />
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -386,7 +520,6 @@ export default function PricingPage({
             ← Back to PodLever
           </Link>
           <div className="flex items-center gap-6">
-            {/* Legal links — required before collecting email addresses publicly */}
             <Link href="/privacy" className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors">
               Privacy Policy
             </Link>
@@ -405,31 +538,39 @@ export default function PricingPage({
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
+/** CTA descriptor — either a plain link, a Stripe Checkout button, or a mailto fallback. */
+type TierCta =
+  | { kind: "link";     href: string;      label: string; variant: "primary" | "outline" }
+  | { kind: "checkout"; prices: TierPrices; label: string; variant: "primary" | "outline" }
+  | { kind: "mailto";                       label: string; variant: "primary" | "outline" };
+
 interface TierCardProps {
   tier: Tier;
   name: string;
   tagline: string;
-  annualPrice: number;
-  monthlyPrice: number;
+  displayPrices: { annual: number; monthly: number };
   highlight: boolean;
-  ctaLabel: string;
-  ctaHref: string | null;   // null = show waitlist form instead
-  ctaVariant: "primary" | "outline";
   badge: string | null;
+  cta: TierCta;
   perks: string[];
 }
 
+/**
+ * TierCard — renders a single pricing plan card.
+ *
+ * Price display uses data attributes (data-tier, data-annual, data-monthly)
+ * so PricingToggle's client-side script can swap values without re-rendering.
+ * CTA is determined by the `cta` prop: link → <Link>, checkout → <CheckoutButton>,
+ * mailto → <a href="mailto:..."> (graceful degradation if Stripe is unreachable).
+ */
 function TierCard({
   tier,
   name,
   tagline,
-  annualPrice,
-  monthlyPrice,
+  displayPrices,
   highlight,
-  ctaLabel,
-  ctaHref,
-  ctaVariant,
   badge,
+  cta,
   perks,
 }: TierCardProps) {
   return (
@@ -441,10 +582,10 @@ function TierCard({
           : "bg-zinc-900/30 border-zinc-800/60",
       ].join(" ")}
     >
-      {/* Popular badge */}
+      {/* Founding Member / popular badge */}
       {badge && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="px-3 py-1 rounded-full bg-amber-400 text-zinc-950 text-xs font-bold">
+          <span className="px-3 py-1 rounded-full bg-amber-400 text-zinc-950 text-xs font-bold whitespace-nowrap">
             {badge}
           </span>
         </div>
@@ -464,17 +605,22 @@ function TierCard({
           <p className="text-zinc-500 text-sm mt-0.5">{tagline}</p>
         </div>
 
-        {/* Price display — client toggle shows annual or monthly */}
+        {/* Price display — client toggle swaps data-annual / data-monthly values */}
         <div className="space-y-1">
           <div className="flex items-baseline gap-1.5">
-            <span className="text-4xl font-bold text-white" data-tier={tier} data-annual={annualPrice} data-monthly={monthlyPrice}>
-              ${annualPrice}
+            <span
+              className="text-4xl font-bold text-white"
+              data-tier={tier}
+              data-annual={displayPrices.annual}
+              data-monthly={displayPrices.monthly}
+            >
+              ${displayPrices.annual}
             </span>
             <span className="text-zinc-500 text-sm">/mo</span>
           </div>
-          {annualPrice > 0 && (
+          {displayPrices.annual > 0 && (
             <p className="text-zinc-600 text-xs" data-billing-note={tier}>
-              billed annually · ${monthlyPrice}/mo billed monthly
+              billed annually · ${displayPrices.monthly}/mo billed monthly
             </p>
           )}
         </div>
@@ -505,33 +651,50 @@ function TierCard({
       </div>
 
       {/* CTA */}
-      <div className="mt-6 space-y-3">
-        {ctaHref ? (
+      <div className="mt-6">
+        {cta.kind === "link" && (
           <Link
-            href={ctaHref}
+            href={cta.href}
             className={[
               "block w-full py-3 px-5 rounded-xl text-sm font-semibold text-center transition-colors",
-              ctaVariant === "primary"
+              cta.variant === "primary"
                 ? "bg-amber-400 hover:bg-amber-300 text-zinc-950"
                 : "border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white",
             ].join(" ")}
           >
-            {ctaLabel}
+            {cta.label}
           </Link>
-        ) : (
-          <WaitlistForm
-            source={`pricing_${tier}`}
-            variant="default"
-            placeholder="your@email.com"
-            buttonLabel={ctaLabel}
+        )}
+
+        {cta.kind === "checkout" && (
+          <CheckoutButton
+            tier={tier === "pro" ? "pro" : "agency"}
+            annualPriceId={cta.prices.annual}
+            monthlyPriceId={cta.prices.monthly}
+            label={cta.label}
+            variant={cta.variant}
           />
+        )}
+
+        {cta.kind === "mailto" && (
+          <a
+            href="mailto:hi@podlever.com?subject=Founding Member enquiry"
+            className={[
+              "block w-full py-3 px-5 rounded-xl text-sm font-semibold text-center transition-colors",
+              cta.variant === "primary"
+                ? "bg-amber-400 hover:bg-amber-300 text-zinc-950"
+                : "border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white",
+            ].join(" ")}
+          >
+            {cta.label}
+          </a>
         )}
       </div>
     </div>
   );
 }
 
-/** Renders a feature cell value: boolean → checkmark/dash, string → text. */
+/** Renders a feature cell: boolean → checkmark/dash, string → text. */
 function FeatureCell({
   value,
   isHighlight = false,

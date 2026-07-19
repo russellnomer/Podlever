@@ -79,8 +79,10 @@ export function CheckoutButton({
       });
 
       if (resp.status === 401) {
-        // Not logged in — send to login then back to pricing with upgrade param
-        const next = encodeURIComponent(`/pricing?upgrade=${tier}`);
+        // Not logged in — send to login then back to pricing with upgrade + billing params.
+        // Include the resolved billing period so the post-login ?upgrade= auto-redirect
+        // creates the correct Stripe Checkout session (annual vs monthly).
+        const next = encodeURIComponent(`/pricing?upgrade=${tier}&billing=${period}`);
         window.location.href = `/auth/login?next=${next}`;
         return;
       }

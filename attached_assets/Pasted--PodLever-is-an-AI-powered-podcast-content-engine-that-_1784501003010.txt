@@ -1,0 +1,30 @@
+**PodLever** is an AI-powered podcast content engine that takes a raw audio/video recording and automatically generates a full suite of assets: cleaned audio, transcript, YouTube video, vertical clips (TikTok/Reels/Shorts), show notes, blog post, social media posts, and a guest media pack. It's aimed at independent podcasters to cut down post-production time.
+
+### Main Competitors
+PodLever sits in the growing space of **AI podcast post-production and content repurposing tools**. Here are the strongest direct and close competitors as of 2026:
+
+- **Castmagic**: One of the closest matches. Upload audio/video → generates transcripts, show notes, blog posts, social media copy, emails, and more. Strong for text-based repurposing from podcasts. Often praised for podcasters specifically.
+
+- **Descript**: Very popular all-in-one. Transcript-based editing (edit audio by editing text), AI overdub/voice cloning, filler word removal, Studio Sound cleanup, and tools for clips/show notes. Handles much of the workflow PodLever promises, plus more hands-on editing power. Frequently tops "best AI tools for podcasters" lists.
+
+- **Opus Clip**: Excels at turning long episodes into high-quality vertical clips (Reels, TikTok, Shorts) with AI virality scoring, captions, and reframing. Often paired with other tools for full repurposing. Great for the social/video clip side of PodLever.
+
+- **Riverside.fm** (with Magic Clips): Strong recording platform with built-in AI for transcription, clips, and post-production features. Good if you record remotely.
+
+### Other Notable Alternatives
+- **Auphonic**: Automated audio post-processing (noise reduction, leveling, etc.). More focused on audio cleanup than full content generation.
+- **Adobe Podcast** (Enhance Speech): Free/strong audio cleanup tool.
+- **Flowjin, Vizard, Klap, Montage**: AI clip generators focused on short-form video from long content.
+- **Repurpose.io**: More about distributing/repurposing existing content across platforms rather than generating new assets from scratch.
+
+Many podcasters use **stacked tools** (e.g., Descript or Castmagic + Opus Clip + Auphonic) rather than a single all-in-one like PodLever, depending on budget and needs.
+
+### Quick Comparison
+| Tool          | Strengths                          | Best For                     | Pricing (approx.) |
+|---------------|------------------------------------|------------------------------|-------------------|
+| PodLever     | Full suite (audio, clips, blog, guest pack) | All-in-one automation       | Free tier; Pro $29/mo |
+| Castmagic    | Text repurposing (notes, posts, blogs) | Written content from audio | Metered/sub       |
+| Descript     | Text-based editing + audio tools   | Editing & production        | ~$12–24/mo        |
+| Opus Clip    | Viral short clips                  | Social media clips          | ~$9–15/mo+        |
+
+PodLever is still in early access, so competitors like Descript and Castmagic have more mature ecosystems and user bases. If you're evaluating for your own use (or building something similar on Replit), I can help dig deeper into pricing, reviews, or even prompt comparisons.
