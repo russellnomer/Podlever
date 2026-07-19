@@ -1,0 +1,11 @@
+# robots.txt — PodLever
+# Generated: 2026-07-19
+
+User-agent: *
+Allow: /
+Disallow: /auth/
+Disallow: /dashboard
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://podlever.replit.app/sitemap.xml

@@ -31,3 +31,6 @@ export * from "./assets";
 
 // Audit/event log (depends on episodes; append-only)
 export * from "./pipeline-events";
+
+// Marketing / growth — no FK dependencies
+export * from "./waitlist";
