@@ -110,6 +110,48 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// ─── JSON-LD structured data (module scope) ───────────────────────────────────
+
+/**
+ * JSON_LD — SoftwareApplication schema for Google rich results.
+ *
+ * Defined at module scope (not inside the component) so it is evaluated once
+ * at build time and never re-computed per render. A per-render definition
+ * creates a new object reference on every hydration, which can trigger subtle
+ * mismatches if the value ever becomes dynamic.
+ *
+ * suppressHydrationWarning is added to the <script> tag below so React does
+ * not throw when a browser extension (ad blocker, SEO tool, password manager)
+ * touches the `type` attribute after the server HTML is delivered. This is the
+ * officially recommended pattern for inline JSON-LD script tags in React apps.
+ */
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type":    "SoftwareApplication",
+  name:       "PodLever",
+  description:
+    "PodLever transforms raw podcast episodes into a complete content suite: transcript, show notes, blog post, social clips, and guest media pack.",
+  url:          SITE_URL,
+  applicationCategory: "MultimediaApplication",
+  operatingSystem:     "Web",
+  offers: {
+    "@type":       "AggregateOffer",
+    priceCurrency: "USD",
+    lowPrice:      "0",
+    highPrice:     "97",
+    offerCount:    "3",
+  },
+  author: {
+    "@type": "Person",
+    name:    "Russell Nomer",
+    url:     "https://www.linkedin.com/in/russellnomer/",
+  },
+  publisher: {
+    "@type": "Organization",
+    name:    "Russell Nomer Consulting",
+  },
+};
+
 // ─── Root layout ──────────────────────────────────────────────────────────────
 
 /**
@@ -123,41 +165,16 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // JSON-LD structured data — SoftwareApplication schema
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type":    "SoftwareApplication",
-    name:       "PodLever",
-    description:
-      "PodLever transforms raw podcast episodes into a complete content suite: transcript, show notes, blog post, social clips, and guest media pack.",
-    url:          SITE_URL,
-    applicationCategory: "MultimediaApplication",
-    operatingSystem:     "Web",
-    offers: {
-      "@type":    "AggregateOffer",
-      priceCurrency: "USD",
-      lowPrice:   "0",
-      highPrice:  "97",
-      offerCount: "3",
-    },
-    author: {
-      "@type": "Person",
-      name:    "Russell Nomer",
-      url:     "https://www.linkedin.com/in/russellnomer/",
-    },
-    publisher: {
-      "@type": "Organization",
-      name:    "Russell Nomer Consulting",
-    },
-  };
-
   return (
     <html lang="en">
       <head>
-        {/* JSON-LD structured data */}
+        {/* JSON-LD structured data — suppressHydrationWarning prevents React
+            from throwing when browser extensions modify the type attribute. */}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+          suppressHydrationWarning
         />
       </head>
       <body className="antialiased bg-[#0D0D0F] text-zinc-100">
