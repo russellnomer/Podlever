@@ -242,31 +242,52 @@ export function getOwnerReplitUserId(): string {
  * getCallbackUrl — Build the OIDC callback URL for this environment.
  *
  * Resolution priority (first non-empty value wins):
- *   1. OIDC_CALLBACK_URL   — explicit override for any environment (set in Replit Secrets for prod)
- *   2. REPLIT_DEV_DOMAIN   — auto-injected by Replit in the dev workspace
- *   3. REPLIT_DOMAINS      — comma-separated list of domains injected in Replit deployments;
- *                            we take the first one
+ *   1. OIDC_CALLBACK_URL   — explicit override; set in Replit Secrets for production
+ *   2. Request x-forwarded-host — Replit's reverse proxy always sets this header to the
+ *                                  real public hostname (dev domain or autoscale domain).
+ *                                  This is the most reliable source in the dev preview
+ *                                  because env vars may not be injected at runtime.
+ *   3. REPLIT_DEV_DOMAIN   — auto-injected by Replit in the dev workspace (fallback)
+ *   4. REPLIT_DOMAINS      — comma-separated list injected in Replit Autoscale (last resort)
  *
  * The callback route is always at /auth/callback (not /api/ — avoids proxy conflict).
  *
  * Deployment checklist: set OIDC_CALLBACK_URL in Replit Secrets to the production URL
  * (e.g. https://podlever.com/auth/callback) before deploying to Autoscale.
  *
+ * @param request  Optional incoming Request — used to derive the host from proxy headers.
+ *                 Pass this from Route Handlers so the URL is always correct in every
+ *                 environment without relying on env vars that may not be injected.
  * @returns Full HTTPS URL for the OIDC callback
- * @throws  If none of the domain env vars are set (prevents misconfigured OIDC silently)
+ * @throws  If no domain source is available (prevents silent misconfiguration)
  */
-export function getCallbackUrl(): string {
-  // 1. Explicit override — highest priority; set this in production
+export function getCallbackUrl(request?: Request): string {
+  // 1. Explicit override — highest priority; set this in production via Replit Secrets.
   if (process.env.OIDC_CALLBACK_URL) {
     return process.env.OIDC_CALLBACK_URL;
   }
 
-  // 2. Dev workspace domain (auto-injected by Replit workspace)
+  // 2. Derive from the incoming request's reverse-proxy headers.
+  //    Replit's proxy always forwards:
+  //      x-forwarded-host  — the public hostname (e.g. abc.replit.dev or custom domain)
+  //      x-forwarded-proto — the public protocol (always "https" in Replit)
+  //    This works in both the dev preview and Autoscale deployments without any env vars.
+  if (request) {
+    const host  = request.headers.get("x-forwarded-host");
+    const proto = request.headers.get("x-forwarded-proto") ?? "https";
+    if (host) {
+      // x-forwarded-host may contain multiple values (comma-separated); take the first.
+      const primaryHost = host.split(",")[0]!.trim();
+      return `${proto}://${primaryHost}/auth/callback`;
+    }
+  }
+
+  // 3. Dev workspace domain (auto-injected by Replit in some environments).
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}/auth/callback`;
   }
 
-  // 3. Deployment domain (injected in Replit Autoscale; comma-separated, take first)
+  // 4. Deployment domain (injected in Replit Autoscale; comma-separated, take first).
   if (process.env.REPLIT_DOMAINS) {
     const firstDomain = process.env.REPLIT_DOMAINS.split(",")[0]!.trim();
     return `https://${firstDomain}/auth/callback`;
@@ -275,6 +296,7 @@ export function getCallbackUrl(): string {
   throw new Error(
     "Cannot determine the OIDC callback URL. " +
       "Set OIDC_CALLBACK_URL in Replit Secrets (required for deployed environments), " +
-      "or ensure REPLIT_DEV_DOMAIN / REPLIT_DOMAINS are set (auto-injected by Replit).",
+      "or pass the incoming Request to getCallbackUrl() so the host can be derived " +
+      "from the x-forwarded-host header.",
   );
 }

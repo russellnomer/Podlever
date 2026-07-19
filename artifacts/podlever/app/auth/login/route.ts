@@ -110,9 +110,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const state = oidcClient.randomState();
     const nonce = oidcClient.randomNonce();
 
-    // Build the OIDC authorization URL
+    // Build the OIDC authorization URL.
+    // Pass `request` so getCallbackUrl() can derive the real public hostname from
+    // the x-forwarded-host header — works in dev preview without any env vars set.
     const redirectUrl = oidcClient.buildAuthorizationUrl(config, {
-      redirect_uri:          getCallbackUrl(),
+      redirect_uri:          getCallbackUrl(request),
       scope:                 "openid profile email",
       code_challenge:        codeChallenge,
       code_challenge_method: "S256",
