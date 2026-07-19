@@ -18,3 +18,10 @@ export {
   assetRepository,
   AssetNotFoundError,
 } from "./asset.repository";
+
+export {
+  WaitlistRepository,
+  waitlistRepository,
+  type SourceBreakdown,
+  type WaitlistSummary,
+} from "./waitlist.repository";
