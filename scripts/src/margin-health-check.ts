@@ -25,8 +25,16 @@ import { fileURLToPath } from "node:url";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Sell price per Managed AI episode credit (USD). Defined in pricing-model-v2.1-approved.md */
-const SELL_PRICE_USD = 7.0;
+/**
+ * All Managed AI credit price tiers. Source: pricing-model-v2.1-approved.md.
+ * GM thresholds are applied independently to each tier — a rate hike that keeps
+ * single-credit GM healthy can simultaneously push a pack tier below the floor.
+ */
+const CREDIT_TIERS: ReadonlyArray<{ label: string; sellPrice: number }> = [
+  { label: "Single credit  ($7.00 / ep)", sellPrice: 7.0 },
+  { label: "10-ep pack     ($6.50 / ep)", sellPrice: 6.5 },
+  { label: "25-ep pack     ($6.00 / ep)", sellPrice: 6.0 },
+];
 
 /** GM floor that triggers a WARNING log (80%). Below here, alert monitoring. */
 const GM_WARNING_THRESHOLD = 0.8;
@@ -198,16 +206,27 @@ function computeLlmCost(
   };
 }
 
+/** Raw COGS before sell-price is applied (same for all tiers). */
+interface RawCogs {
+  transcription: number;
+  llm: number;
+  overhead: number;
+  total: number;
+}
+
 /**
- * Compute full COGS breakdown for a 60-minute Managed AI episode.
+ * Compute raw COGS for a 60-minute Managed AI episode (sell-price-agnostic).
  *
  * Primary stack:
  *   - Transcription: AssemblyAI Universal-3.5 Pro
  *   - LLM: Anthropic Haiku 4.5 with mandatory prompt caching
  *   - Overhead: fixed $0.22/episode (infra + support)
+ *
+ * COGS is identical across credit tiers — only the sell price (and therefore
+ * gross margin) differs. Compute once, then derive GM per tier.
  */
-function computeCogs(rates: RatesJson): {
-  breakdown: CogsBreakdown;
+function computeRawCogs(rates: RatesJson): {
+  raw: RawCogs;
   llmDetail: CogsDetail;
   transcriptionModel: string;
   llmModel: string;
@@ -235,22 +254,34 @@ function computeCogs(rates: RatesJson): {
   }
   const { cost: llmCost, detail: llmDetail } = computeLlmCost(haikuRates);
 
-  // ── Totals ────────────────────────────────────────────────────────────────
   const totalCogs = transcriptionCost + llmCost + OVERHEAD_PER_EPISODE_USD;
-  const grossMargin = (SELL_PRICE_USD - totalCogs) / SELL_PRICE_USD;
 
   return {
-    breakdown: {
+    raw: {
       transcription: transcriptionCost,
       llm: llmCost,
       overhead: OVERHEAD_PER_EPISODE_USD,
       total: totalCogs,
-      grossMargin,
-      grossMarginPct: `${(grossMargin * 100).toFixed(1)}%`,
     },
     llmDetail,
     transcriptionModel: transcriptionKey,
     llmModel: `anthropic/${llmKey}`,
+  };
+}
+
+/**
+ * Derive a full CogsBreakdown from raw COGS and a specific sell price.
+ * Called once per credit tier in the multi-tier health check loop.
+ */
+function breakdownForTier(raw: RawCogs, sellPriceUsd: number): CogsBreakdown {
+  const grossMargin = (sellPriceUsd - raw.total) / sellPriceUsd;
+  return {
+    transcription: raw.transcription,
+    llm: raw.llm,
+    overhead: raw.overhead,
+    total: raw.total,
+    grossMargin,
+    grossMarginPct: `${(grossMargin * 100).toFixed(1)}%`,
   };
 }
 
@@ -379,64 +410,100 @@ async function main(): Promise<void> {
     stampRatesAsReviewed(ratesPath, rates);
   }
 
-  // ── Compute COGS & gross margin ────────────────────────────────────────────
+  // ── Compute COGS (sell-price-agnostic — same for all tiers) ──────────────
   console.log(
     "\n[margin-check] Computing COGS for primary stack " +
       "(AssemblyAI U3.5 Pro + Haiku 4.5 + prompt caching)...",
   );
 
-  let breakdown: CogsBreakdown;
+  let raw: RawCogs;
   let llmDetail: CogsDetail;
   let transcriptionModel: string;
   let llmModel: string;
 
   try {
-    ({ breakdown, llmDetail, transcriptionModel, llmModel } =
-      computeCogs(rates));
+    ({ raw, llmDetail, transcriptionModel, llmModel } = computeRawCogs(rates));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[margin-check] ❌ ERROR: COGS computation failed — ${message}`);
     process.exit(3);
   }
 
-  // ── Print detailed breakdown ───────────────────────────────────────────────
+  // ── Print detailed COGS breakdown (shared across all tiers) ───────────────
   console.log("\n─── COGS Breakdown (60-min episode) ───────────────────────────");
-  console.log(`  Transcription  (${transcriptionModel}):  ${usd(breakdown.transcription)}`);
-  console.log(`  LLM            (${llmModel}):            ${usd(breakdown.llm)}`);
+  console.log(`  Transcription  (${transcriptionModel}):  ${usd(raw.transcription)}`);
+  console.log(`  LLM            (${llmModel}):            ${usd(raw.llm)}`);
   console.log(`    ├─ Cache write (transcript × 1):        ${usd(llmDetail.cacheWriteCost)}`);
   console.log(`    ├─ Input call 1 (instruction):          ${usd(llmDetail.firstCallInputCost)}`);
   console.log(`    ├─ Output call 1:                       ${usd(llmDetail.firstCallOutputCost)}`);
   console.log(`    ├─ Cache reads calls 2–10 (×9):         ${usd(llmDetail.subsequentCacheReadCost)}`);
   console.log(`    ├─ Input calls 2–10 (instruction ×9):   ${usd(llmDetail.subsequentInputCost)}`);
   console.log(`    └─ Output calls 2–10 (×9):              ${usd(llmDetail.subsequentOutputCost)}`);
-  console.log(`  Overhead       (infra + support):         ${usd(breakdown.overhead)}`);
+  console.log(`  Overhead       (infra + support):         ${usd(raw.overhead)}`);
   console.log("  ─────────────────────────────────────────────────────────────");
-  console.log(`  TOTAL COGS:                               ${usd(breakdown.total)}`);
-  console.log(`  Sell price:                               ${usd(SELL_PRICE_USD)}`);
-  console.log(`  Gross margin:                             ${breakdown.grossMarginPct}`);
+  console.log(`  TOTAL COGS:                               ${usd(raw.total)}`);
   console.log("──────────────────────────────────────────────────────────────");
 
-  // ── Margin health decision ─────────────────────────────────────────────────
-  const gm = breakdown.grossMargin;
+  // ── Per-tier gross margin health check ────────────────────────────────────
+  // Each credit tier has a different sell price ($7.00 / $6.50 / $6.00).
+  // Thresholds are applied independently — a rate hike that keeps the
+  // single-credit tier healthy can simultaneously breach a pack tier floor.
+  console.log("\n─── Gross Margin by Credit Tier ───────────────────────────────");
+
   const isStaleFlag = isStale ? " [STALE RATES — verify manually]" : "";
 
-  if (gm < GM_ERROR_THRESHOLD) {
-    // GM < 70% — pricing action required
+  // Track the worst exit code across all tiers; we report all findings before
+  // exiting so the operator sees the full picture in a single run.
+  let worstExitCode = 0;
+
+  for (const tier of CREDIT_TIERS) {
+    const breakdown = breakdownForTier(raw, tier.sellPrice);
+    const gm = breakdown.grossMargin;
+
+    let statusTag: string;
+    let tierExitCode: number;
+
+    if (gm < GM_ERROR_THRESHOLD) {
+      // GM < 70% — pricing action required for this tier
+      statusTag = "❌ ERROR  ";
+      tierExitCode = 2;
+    } else if (gm < GM_WARNING_THRESHOLD) {
+      // GM 70–80% — below the 80% design target; alert but not emergency
+      statusTag = "⚠️  WARNING";
+      tierExitCode = 1;
+    } else {
+      // GM ≥ 80% — healthy
+      statusTag = gm >= 0.9 ? "🟢 EXCL   " : "🟡 OK     ";
+      tierExitCode = 0;
+    }
+
+    // Keep the most severe exit code seen across all tiers.
+    if (tierExitCode > worstExitCode) worstExitCode = tierExitCode;
+
+    console.log(
+      `  ${statusTag}  ${tier.label}  →  GM ${breakdown.grossMarginPct}` +
+        (tierExitCode > 0 ? isStaleFlag : ""),
+    );
+  }
+
+  console.log("──────────────────────────────────────────────────────────────");
+
+  // ── Summary & exit ─────────────────────────────────────────────────────────
+  if (worstExitCode === 2) {
     console.error(
-      `\n[margin-check] ❌ ERROR: Gross margin ${breakdown.grossMarginPct} is BELOW the 70% floor.${isStaleFlag}`,
+      `\n[margin-check] ❌ ERROR: One or more credit tiers are BELOW the 70% GM floor.${isStaleFlag}`,
     );
     console.error(
-      "[margin-check]    PRICING ACTION REQUIRED: Review Managed AI credit price ($7.00) " +
-        "against current AI provider rates.",
+      "[margin-check]    PRICING ACTION REQUIRED: Review credit pack prices against " +
+        "current AI provider rates.",
     );
     console.error(
       "[margin-check]    Consult: docs/pricing/pricing-model-v2.1-approved.md",
     );
     process.exit(2);
-  } else if (gm < GM_WARNING_THRESHOLD) {
-    // GM 70–80% — below the 80% design target; alert but not emergency
+  } else if (worstExitCode === 1) {
     console.warn(
-      `\n[margin-check] ⚠️  WARNING: Gross margin ${breakdown.grossMarginPct} is below the 80% target.${isStaleFlag}`,
+      `\n[margin-check] ⚠️  WARNING: One or more credit tiers are below the 80% GM target.${isStaleFlag}`,
     );
     console.warn(
       "[margin-check]    Review provider rate changes and consider whether pricing adjustment is needed.",
@@ -446,16 +513,15 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   } else {
-    // GM ≥ 80% — healthy
-    const healthTag = gm >= 0.9 ? "🟢 EXCELLENT" : "🟡 ACCEPTABLE";
+    // All tiers healthy
     console.log(
-      `\n[margin-check] ${healthTag}: Gross margin ${breakdown.grossMarginPct} is above the 80% target.${isStaleFlag}`,
+      `\n[margin-check] ✅ All credit tiers are above the 80% GM target.${isStaleFlag}`,
     );
     if (isStale) {
       console.warn(
         "[margin-check] ⚠️  Rates are stale — refresh from provider pages before relying on this result.",
       );
-      // Still exit 0 when margin is healthy; staleness is a warning, not a failure.
+      // Exit 0 when all margins are healthy; staleness is a warning, not a failure.
     }
     process.exit(0);
   }
