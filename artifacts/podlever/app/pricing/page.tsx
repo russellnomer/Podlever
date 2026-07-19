@@ -385,9 +385,18 @@ export default function PricingPage({
           <Link href="/" className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors">
             ← Back to PodLever
           </Link>
-          <p className="text-zinc-600 text-xs">
-            © {new Date().getFullYear()} Russell Nomer Consulting.
-          </p>
+          <div className="flex items-center gap-6">
+            {/* Legal links — required before collecting email addresses publicly */}
+            <Link href="/privacy" className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors">
+              Privacy Policy
+            </Link>
+            <Link href="/terms" className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors">
+              Terms of Service
+            </Link>
+            <p className="text-zinc-600 text-xs">
+              © {new Date().getFullYear()} Russell Nomer Consulting.
+            </p>
+          </div>
         </div>
       </footer>
     </div>

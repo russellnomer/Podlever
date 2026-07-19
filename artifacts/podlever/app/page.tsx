@@ -715,6 +715,19 @@ function Footer() {
             © {new Date().getFullYear()} Russell Nomer Consulting. All rights reserved.
           </p>
           <div className="flex items-center gap-6">
+            {/* Legal links — required before collecting email addresses publicly */}
+            <Link
+              href="/privacy"
+              className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors"
+            >
+              Privacy Policy
+            </Link>
+            <Link
+              href="/terms"
+              className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors"
+            >
+              Terms of Service
+            </Link>
             <a
               href="https://www.linkedin.com/in/russellnomer/"
               className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors"

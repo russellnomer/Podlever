@@ -141,6 +141,18 @@ export function WaitlistForm({
           {state.error}
         </p>
       )}
+
+      {/* Consent / legal note — required before collecting email addresses publicly */}
+      <p className="mt-2 text-zinc-600 text-xs text-center leading-relaxed">
+        By joining you agree to our{" "}
+        <a
+          href="/privacy"
+          className="underline underline-offset-2 hover:text-zinc-400 transition-colors"
+        >
+          Privacy Policy
+        </a>
+        .
+      </p>
     </form>
   );
 }
