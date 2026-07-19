@@ -3,6 +3,37 @@
 All notable changes to PodLever are documented here.  
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — 2026-07-19
+
+### Fixed
+- **Waitlist bug (production):** Switched `onConflictDoNothing({ target })` → bare `onConflictDoNothing()` to suppress all conflicts regardless of constraint name. Added raw-SQL fallback path and full error-chain logging (`err.cause`) so the real PostgreSQL error code is always visible in production logs. Previously only `err.message` was captured, hiding the root cause.
+
+### Added
+- **Persistent job queue:** `job_queue` table with `SELECT FOR UPDATE SKIP LOCKED` worker. `after()` now triggers a fast worker POST instead of running the pipeline directly. Retries: 30s → 5min → 30min backoff. Stale-job recovery at `GET /rpc/queue/worker`.
+- **Dolby.io audio cleanup:** Noise reduction + loudness normalization applied before transcription. Graceful fallback if `DOLBY_API_APP_KEY`/`DOLBY_API_APP_SECRET` are not configured. Cleaned audio stored at `audio/{episodeId}/cleaned.wav`.
+- **COGS tracking:** `episode_cogs` table captures token counts and estimated USD cost per API call. Admin dashboard at `/admin/cogs` shows monthly totals, per-step breakdown, and top-cost episodes.
+- **Guest media pack PDF:** Branded pdfkit PDF generated during processing and on-demand for legacy episodes. Download via `GET /api/episodes/[id]/guest-pack`.
+- **ZIP bulk export:** All assets (text + audio) bundled into a single download at `GET /api/episodes/[id]/zip`.
+- **Shareable episode links:** `episodes.share_token` column; `POST /api/episodes/[id]/share-token` generates a public link. Public read-only page at `/share/[token]` with viral PodLever CTA.
+- **Asset regeneration:** Regenerate any text asset (show notes, blog post, social copy, guest pack) with revised output. Pro plan: 3 regenerations/episode; Agency: unlimited; Free: blocked. Tracked in `usage_events`.
+- **Founding Member welcome page:** `/dashboard/welcome` — milestone celebration, perks list, Discord CTA (configurable via `FOUNDING_MEMBER_DISCORD_URL`).
+- **Episode detail upgrades:** ZIP download button, PDF download button, Share button, Regenerate button per asset, cleaned audio row, episode COGS badge.
+- **`plan` field on `OwnerIdentity`:** Auth guard now returns billing plan in one DB round-trip (no second query needed in Server Actions).
+
+### Changed
+- **Process route:** Added Dolby cleanup step, COGS logging per API call, PDF generation, and PDF GCS upload before transitioning episode to `ready`.
+- **Episode actions:** Enqueues a `job_queue` row before `after()` so processing survives worker trigger failures.
+
+### Database (migration 0008)
+- New tables: `job_queue`, `episode_cogs`
+- New columns: `episodes.share_token`, `episodes.cleaned_audio_storage_key`
+- New enum value: `asset_type.guest_media_pack_pdf`
+- New event type: `usage_events.event_type = 'asset_regenerated'`
+
+### Configuration Required
+- `DOLBY_API_APP_KEY` + `DOLBY_API_APP_SECRET` — Replit Secrets; graceful fallback until set
+- `FOUNDING_MEMBER_DISCORD_URL` — optional; shows placeholder if unset
+
 ---
 
 ## [0.1.0-alpha.3] — 2026-07-19 — Pricing Model + Unit Economics (Task #12)

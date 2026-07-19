@@ -78,6 +78,8 @@ export type OwnerIdentity = {
   replitUserId: string;
   /** Display name — available for UI rendering without a DB query */
   displayName: string;
+  /** Current billing plan slug ("free" | "pro" | "agency") — from users.plan */
+  plan: string;
 };
 
 // ─── Guard (internal — testable without Next.js cookies() context) ────────────
@@ -123,7 +125,7 @@ export async function requireOwnerFromSession(
   // We fetch only the session_version column to minimize data transfer.
   // A missing row (user deleted from DB) is treated as UnauthorizedError.
   const [dbUser] = await db
-    .select({ sessionVersion: users.sessionVersion })
+    .select({ sessionVersion: users.sessionVersion, plan: users.plan })
     .from(users)
     .where(eq(users.id, user.userId))
     .limit(1);
@@ -144,6 +146,7 @@ export async function requireOwnerFromSession(
     userId:       user.userId,
     replitUserId: user.replitUserId,
     displayName:  user.displayName,
+    plan:         dbUser.plan,
   };
 }
 

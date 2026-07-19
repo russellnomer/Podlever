@@ -3,46 +3,58 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #2 — Episode processing pipeline)
+ * Last modified: 2026-07-19 by agent (Board priority — close product/promise gap)
  *
  * Route: POST /rpc/episodes/[id]/process
  *
- * Auth: CRON_SECRET bearer token (internal — called by uploadEpisodeAction after-hook).
- * Never called directly by the browser.
+ * Pipeline (in order):
+ *   1.  Fetch episode + verify audio key exists
+ *   2.  Download original audio from GCS
+ *   3.  Dolby.io audio cleanup (graceful fallback if not configured)
+ *   4.  Upload cleaned audio to GCS → update episode.cleanedAudioStorageKey
+ *   5.  Transcribe via Whisper → log COGS
+ *   6.  Store transcript asset
+ *   7.  Generate show_notes, blog_post, social_post, guest_media_pack in parallel → log COGS
+ *   8.  Generate guest media pack PDF → upload to GCS → store as asset
+ *   9.  Transition episode: processing → ready
+ *   10. Record usage event + analytics
  *
- * Pipeline (sequential):
- *   1. Fetch episode → get audioStorageKey + ownerId
- *   2. Download audio from GCS → Buffer
- *   3. Transcribe via OpenAI gpt-4o-mini-transcribe
- *   4. Store transcript as asset (content in DB)
- *   5. Generate show_notes, blog_post, social_post, guest_media_pack via GPT
- *   6. Transition episode: processing → ready
+ * Auth: CRON_SECRET bearer token — internal only, never from browser.
+ * Error: logs full error chain; leaves episode in "processing" (worker retries).
  *
- * Error handling: logs error, leaves episode in "processing" state.
- * The owner can see it is stalled on the detail page; retry via re-upload for beta.
- *
- * SECURITY NOTES:
- *   - No user session check — authenticated exclusively via CRON_SECRET.
- *   - Internal-only; never routed from the public internet.
- *   - episodeId validated as UUID before any DB query.
+ * SECURITY: server-only. Authorized by CRON_SECRET. No PII in logs.
+ * PRIVACY: OpenAI chat calls include user: "none" (disables per-user tracking).
+ *          Audio content is sent to OpenAI Whisper and Dolby.io per our privacy policy.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z }                          from "zod";
 import { openai, MODELS }             from "@/lib/openai";
-import { downloadAudioBuffer }        from "@/lib/storage";
-import { episodeRepository, assetRepository, usageRepository } from "@/repositories";
+import {
+  downloadAudioBuffer,
+  uploadFileBuffer,
+  getSignedDownloadUrl,
+}                                     from "@/lib/storage";
+import { cleanAudio }                 from "@/lib/audio-cleanup";
+import { recordCogs, estimateAudioCost, estimateTokenCost, PRICING_USD } from "@/lib/cogs";
+import { generateGuestPackPdf }       from "@/lib/pdf/guest-pack";
+import {
+  episodeRepository,
+  assetRepository,
+  usageRepository,
+}                                     from "@/repositories";
 import { executeTransition }          from "@/server/fsm";
 import { trackServerEvent }           from "@/lib/analytics";
+import { db }                         from "@/db";
+import { episodes }                   from "@/db/schema";
+import { eq }                         from "drizzle-orm";
 import { randomUUID }                 from "crypto";
 import { toFile }                     from "openai";
 
-// ─── Auth helper ──────────────────────────────────────────────────────────────
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
-/** Rejects requests that don't carry the correct CRON_SECRET bearer token. */
 function isAuthorized(req: NextRequest): boolean {
-  const header = req.headers.get("authorization") ?? "";
-  const token  = header.replace(/^Bearer\s+/i, "");
+  const token  = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
   return token === secret;
@@ -50,10 +62,6 @@ function isAuthorized(req: NextRequest): boolean {
 
 // ─── Asset generation prompts ─────────────────────────────────────────────────
 
-/**
- * SYSTEM_PROMPTS — one prompt per generated asset type.
- * Each prompt receives the transcript as user content and returns the asset text.
- */
 const SYSTEM_PROMPTS: Record<string, string> = {
   show_notes: `You are a podcast producer writing structured show notes.
 Given a podcast transcript, produce clean, reader-friendly show notes in markdown:
@@ -92,6 +100,7 @@ Given a transcript, produce a structured guest media pack in markdown:
 - **Key topics discussed** (5-7 bullet points)
 - **Suggested social announcement** (short caption the guest can post)
 - **Suggested follow-up questions** (3 questions for future conversations)
+- **Notable quotes** (2-3 direct quotes with attribution)
 Return only the markdown — no preamble.`,
 };
 
@@ -101,50 +110,106 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  // ── Auth ────────────────────────────────────────────────────────────────────
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // ── Validate episodeId ──────────────────────────────────────────────────────
   const { id: episodeId } = await params;
-  const uuidResult = z.string().uuid().safeParse(episodeId);
-  if (!uuidResult.success) {
+  if (!z.string().uuid().safeParse(episodeId).success) {
     return NextResponse.json({ error: "Invalid episode ID" }, { status: 400 });
   }
 
+  const startMs = Date.now();
   console.log(JSON.stringify({ event: "episode.process.start", episodeId, ts: new Date().toISOString() }));
 
   try {
-    // ── 1. Fetch episode ──────────────────────────────────────────────────────
+    // ── 1. Fetch episode ────────────────────────────────────────────────────
     const episode = await episodeRepository.getEpisodeById(episodeId);
     if (!episode.audioStorageKey) {
       return NextResponse.json({ error: "No audio uploaded for this episode" }, { status: 422 });
     }
     const { ownerId, audioStorageKey, fsmVersion } = episode;
 
-    // ── 2. Download audio from GCS ────────────────────────────────────────────
-    const audioBuffer = await downloadAudioBuffer(audioStorageKey);
-
-    // Derive filename + MIME from storage key (e.g. "audio/{id}/original.mp3")
-    const ext      = audioStorageKey.split(".").pop() ?? "mp3";
+    // ── 2. Download original audio ──────────────────────────────────────────
+    const originalBuffer = await downloadAudioBuffer(audioStorageKey);
+    const ext            = audioStorageKey.split(".").pop() ?? "mp3";
     const mimeMap: Record<string, string> = {
       mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav",
       ogg: "audio/ogg",  flac: "audio/flac",
     };
     const mimeType = mimeMap[ext] ?? "audio/mpeg";
 
-    // ── 3. Transcribe with OpenAI Whisper ─────────────────────────────────────
-    const audioFile = await toFile(audioBuffer, `episode.${ext}`, { type: mimeType });
+    // Estimate audio duration from file size (rough: 128kbps MP3 ≈ 16KB/s)
+    const estimatedAudioSeconds = Math.round(originalBuffer.byteLength / (128 * 1024 / 8));
+
+    // ── 3. Dolby.io audio cleanup ───────────────────────────────────────────
+    let processedBuffer: Buffer = originalBuffer;
+    let processedMime:   string = mimeType;
+
+    // Get a 15-min signed URL for Dolby to fetch our audio as input
+    const signedInputUrl = await getSignedDownloadUrl(audioStorageKey, 15 * 60 * 1000).catch(() => null);
+
+    if (signedInputUrl) {
+      const cleanupResult = await cleanAudio(signedInputUrl, episodeId);
+
+      if (cleanupResult) {
+        processedBuffer = cleanupResult.buffer;
+        processedMime   = cleanupResult.mimeType;
+
+        // ── 4. Upload cleaned audio to GCS ──────────────────────────────────
+        const cleanedKey = `audio/${episodeId}/cleaned.wav`;
+        await uploadFileBuffer(cleanedKey, processedBuffer, processedMime);
+
+        // Update episode row with cleaned key
+        await db
+          .update(episodes)
+          .set({ cleanedAudioStorageKey: cleanedKey })
+          .where(eq(episodes.id, episodeId));
+
+        // Create / update the cleaned_audio asset
+        await assetRepository.createAssetVersion({
+          episodeId,
+          assetType:  "cleaned_audio",
+          label:      "Dolby.io enhanced audio",
+          storageKey: cleanedKey,
+          content:    null,
+        });
+
+        // Log COGS for cleanup ($0.003/min)
+        const cleanupCost = estimateAudioCost("dolby-enhance", estimatedAudioSeconds);
+        recordCogs({
+          episodeId,
+          userId:       ownerId,
+          step:         "audio_cleanup",
+          model:        "dolby-enhance",
+          audioSeconds: estimatedAudioSeconds,
+          costUsd:      cleanupCost,
+        }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: "audio_cleanup", error: String(err) })));
+      }
+    }
+
+    // ── 5. Transcribe with Whisper ──────────────────────────────────────────
+    // Use the cleaned audio if available, else original
+    const audioFile     = await toFile(processedBuffer, `episode.${ext}`, { type: processedMime });
     const transcription = await openai.audio.transcriptions.create({
       model: MODELS.transcription,
       file:  audioFile,
     });
     const transcript = transcription.text;
 
-    console.log(JSON.stringify({ event: "episode.process.transcribed", episodeId, chars: transcript.length, ts: new Date().toISOString() }));
+    const transcriptCost = estimateAudioCost("gpt-4o-mini-transcribe", estimatedAudioSeconds);
+    recordCogs({
+      episodeId,
+      userId:       ownerId,
+      step:         "transcription",
+      model:        MODELS.transcription,
+      audioSeconds: estimatedAudioSeconds,
+      costUsd:      transcriptCost,
+    }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: "transcription", error: String(err) })));
 
-    // ── 4. Store transcript asset ─────────────────────────────────────────────
+    console.log(JSON.stringify({ event: "episode.process.transcribed", episodeId, chars: transcript.length }));
+
+    // ── 6. Store transcript asset ───────────────────────────────────────────
     await assetRepository.createAssetVersion({
       episodeId,
       assetType:  "transcript",
@@ -153,70 +218,140 @@ export async function POST(
       storageKey: null,
     });
 
-    // ── 5. Generate text assets in parallel ───────────────────────────────────
-    const assetTypes = ["show_notes", "blog_post", "social_post", "guest_media_pack"] as const;
+    // ── 7. Generate text assets in parallel ─────────────────────────────────
+    const textAssetTypes = ["show_notes", "blog_post", "social_post", "guest_media_pack"] as const;
 
     const generated = await Promise.all(
-      assetTypes.map(async (assetType) => {
+      textAssetTypes.map(async (assetType) => {
         const response = await openai.chat.completions.create({
           model:    MODELS.generation,
           messages: [
-            { role: "system",  content: SYSTEM_PROMPTS[assetType]! },
-            { role: "user",    content: `Here is the podcast transcript:\n\n${transcript}` },
+            { role: "system", content: SYSTEM_PROMPTS[assetType]! },
+            { role: "user",   content: `Here is the podcast transcript:\n\n${transcript}` },
           ],
           max_completion_tokens: 2048,
+          // Privacy: "none" disables per-user request tracking in the API logs
+          user: "none",
         });
-        return { assetType, content: response.choices[0]?.message?.content ?? "" };
+
+        const content  = response.choices[0]?.message?.content ?? "";
+        const tokensIn  = response.usage?.prompt_tokens    ?? 0;
+        const tokensOut = response.usage?.completion_tokens ?? 0;
+        const cost      = estimateTokenCost(PRICING_USD["gpt-5.6-luna"] ? "gpt-5.6-luna" : "gpt-5.6-luna", tokensIn, tokensOut);
+
+        recordCogs({
+          episodeId,
+          userId:    ownerId,
+          step:      assetType as "show_notes" | "blog_post" | "social_post" | "guest_media_pack",
+          model:     MODELS.generation,
+          tokensIn,
+          tokensOut,
+          costUsd:   cost,
+        }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: assetType, error: String(err) })));
+
+        return { assetType, content, tokensIn, tokensOut };
       }),
     );
 
-    // Store each generated asset
+    // Store each text asset
     await Promise.all(
       generated.map(({ assetType, content }) =>
         assetRepository.createAssetVersion({
           episodeId,
           assetType,
-          label:     `AI-generated ${assetType.replace(/_/g, " ")}`,
+          label:      `AI-generated ${assetType.replace(/_/g, " ")}`,
           content,
           storageKey: null,
         }),
       ),
     );
 
-    console.log(JSON.stringify({ event: "episode.process.assets_created", episodeId, count: generated.length + 1, ts: new Date().toISOString() }));
+    console.log(JSON.stringify({ event: "episode.process.assets_created", episodeId, count: generated.length + 1 }));
 
-    // ── 6. Transition episode: processing → ready ─────────────────────────────
+    // ── 8. Generate guest media pack PDF ────────────────────────────────────
+    const guestPackContent = generated.find((g) => g.assetType === "guest_media_pack")?.content ?? "";
+
+    if (guestPackContent) {
+      try {
+        const pdfBuffer = await generateGuestPackPdf({
+          episodeTitle: episode.title,
+          content:      guestPackContent,
+          episodeDate:  new Date(episode.createdAt),
+        });
+
+        const pdfKey = `pdfs/${episodeId}/guest-pack.pdf`;
+        await uploadFileBuffer(pdfKey, pdfBuffer, "application/pdf");
+
+        // Store PDF as a versioned asset with storage_key (not content)
+        await assetRepository.createAssetVersion({
+          episodeId,
+          assetType:  "guest_media_pack_pdf",
+          label:      "Guest media pack PDF",
+          storageKey: pdfKey,
+          content:    null,
+        });
+
+        // Log COGS for PDF generation (negligible compute; track for completeness)
+        recordCogs({
+          episodeId,
+          userId:   ownerId,
+          step:     "pdf_generation",
+          model:    "pdfkit",
+          costUsd:  0,
+        }).catch(() => {});
+
+        console.log(JSON.stringify({ event: "episode.process.pdf_created", episodeId, pdfKey }));
+      } catch (pdfErr) {
+        // Non-fatal — text version of guest pack still exists
+        console.warn(JSON.stringify({
+          event:     "episode.process.pdf_failed",
+          episodeId,
+          error:     String(pdfErr),
+        }));
+      }
+    }
+
+    // ── 9. Transition episode: processing → ready ───────────────────────────
+    const latestEpisode = await episodeRepository.getEpisodeById(episodeId);
     await executeTransition({
       episodeId,
       ownerId,
       fromState:         "processing",
-      currentFsmVersion: fsmVersion,
+      currentFsmVersion: latestEpisode.fsmVersion,
       toState:           "ready",
       idempotencyKey:    randomUUID(),
-      metadata:          JSON.stringify({ source: "process-route", assetCount: generated.length + 1 }),
+      metadata:          JSON.stringify({
+        source:     "process-route",
+        assetCount: generated.length + 1,
+        durationMs: Date.now() - startMs,
+      }),
     });
 
-    // ── 7. Record usage event + analytics (non-blocking) ─────────────────────
+    // ── 10. Usage event + analytics ─────────────────────────────────────────
     await usageRepository.recordUsageEvent(ownerId, episodeId, "episode_processed").catch((err) => {
       console.error(JSON.stringify({ event: "usage.record.failed", episodeId, error: String(err) }));
     });
     trackServerEvent("episode_processed", ownerId, {
       episodeId,
-      assetCount: generated.length + 1,
+      assetCount:      generated.length + 1,
       transcriptChars: transcript.length,
+      durationMs:      Date.now() - startMs,
     });
 
-    console.log(JSON.stringify({ event: "episode.process.complete", episodeId, ts: new Date().toISOString() }));
+    console.log(JSON.stringify({
+      event:     "episode.process.complete",
+      episodeId,
+      durationMs: Date.now() - startMs,
+    }));
     return NextResponse.json({ ok: true, episodeId });
 
   } catch (err) {
-    // Leave episode in "processing" — owner sees a stalled state on the detail page.
-    // Full error logged for debugging; no PII in the message.
     console.error(JSON.stringify({
       event:     "episode.process.error",
       episodeId,
       error:     err instanceof Error ? err.message : String(err),
-      ts:        new Date().toISOString(),
+      cause:     err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined,
+      durationMs: Date.now() - startMs,
     }));
     return NextResponse.json({ error: "Processing failed" }, { status: 500 });
   }

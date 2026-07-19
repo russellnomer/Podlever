@@ -81,6 +81,34 @@ export async function downloadAudioBuffer(storageKey: string): Promise<Buffer> {
 }
 
 /**
+ * uploadFileBuffer — Upload any file buffer to GCS at an explicit storage key.
+ *
+ * Unlike uploadAudioBuffer (which derives the path from episodeId + filename),
+ * this accepts the full storage key directly. Used for PDFs, cleaned audio, and
+ * other generated files where the caller controls the path.
+ *
+ * @param storageKey  Full GCS object name (e.g. "pdfs/{episodeId}/guest-pack.pdf")
+ * @param buffer      Raw file bytes
+ * @param mimeType    Content-Type (e.g. "application/pdf", "audio/wav")
+ * @returns           The storageKey (passed through for convenience)
+ */
+export async function uploadFileBuffer(
+  storageKey: string,
+  buffer:     Buffer,
+  mimeType:   string,
+): Promise<string> {
+  const bucket = getBucket();
+  const file   = bucket.file(storageKey);
+
+  await file.save(buffer, {
+    metadata:  { contentType: mimeType },
+    resumable: false,
+  });
+
+  return storageKey;
+}
+
+/**
  * getSignedDownloadUrl — Generate a short-lived signed URL for downloading a GCS object.
  *
  * @param storageKey  GCS object name

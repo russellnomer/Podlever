@@ -46,3 +46,9 @@ export * from "./usage-events";
 
 // First-party analytics event log (depends on users)
 export * from "./analytics-events";
+
+// Persistent background job queue (no FK dependencies)
+export * from "./job-queue";
+
+// Per-call AI cost tracking / COGS (depends on users + episodes)
+export * from "./episode-cogs";

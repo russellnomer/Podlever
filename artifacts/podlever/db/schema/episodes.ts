@@ -109,6 +109,21 @@ export const episodes = pgTable("episodes", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+
+  /**
+   * GCS object key for the Dolby.io-cleaned audio file.
+   * Set by the processing pipeline after audio enhancement.
+   * Null until cleanup completes (or if Dolby is not configured).
+   * Example: "audio/{episodeId}/cleaned.wav"
+   */
+  cleanedAudioStorageKey: text("cleaned_audio_storage_key"),
+
+  /**
+   * Random UUID token for the public shareable episode page (/share/[token]).
+   * Generated on demand via POST /api/episodes/[id]/share-token.
+   * Null until the owner explicitly enables sharing.
+   */
+  shareToken: uuid("share_token").unique(),
 });
 
 // ─── TypeScript types ─────────────────────────────────────────────────────────

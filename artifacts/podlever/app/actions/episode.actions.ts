@@ -186,24 +186,31 @@ export async function uploadEpisodeAction(formData: FormData): Promise<never> {
     metadata:          JSON.stringify({ source: "upload-action", filename: audioFile.name }),
   });
 
-  // ── Fire background processing after response is sent ──────────────────────
-  // after() runs the callback once the Server Action response has been flushed,
-  // so the redirect reaches the client without waiting for AI processing to complete.
-  const port       = process.env.PORT ?? "3000";
-  const processUrl = `http://localhost:${port}/rpc/episodes/${episodeId}/process`;
-  const secret     = process.env.CRON_SECRET ?? "";
+  // ── Enqueue persistent job ─────────────────────────────────────────────────
+  // Writing the job BEFORE after() means it survives even if the after() trigger
+  // fails — the stale-job cron or next upload will pick it up.
+  const { enqueueJob } = await import("@/lib/job-queue");
+  await enqueueJob("process_episode", { episodeId, ownerId: userId });
+
+  // ── Trigger worker immediately after response is flushed ───────────────────
+  // after() fires once the Server Action response reaches the client.
+  // The worker claims and runs the enqueued job — it does NOT re-trigger
+  // processing directly, so a crash here is safe (job is already in queue).
+  const port      = process.env.PORT ?? "3000";
+  const workerUrl = `http://localhost:${port}/rpc/queue/worker`;
+  const secret    = process.env.CRON_SECRET ?? "";
 
   after(async () => {
     try {
-      const res = await fetch(processUrl, {
+      const res = await fetch(workerUrl, {
         method:  "POST",
         headers: { Authorization: `Bearer ${secret}` },
       });
-      if (!res.ok) {
-        console.error(JSON.stringify({ event: "episode.process.trigger_failed", episodeId, status: res.status }));
+      if (!res.ok && res.status !== 204) {
+        console.error(JSON.stringify({ event: "episode.worker.trigger_failed", episodeId, status: res.status }));
       }
     } catch (err) {
-      console.error(JSON.stringify({ event: "episode.process.trigger_error", episodeId, error: String(err) }));
+      console.error(JSON.stringify({ event: "episode.worker.trigger_error", episodeId, error: String(err) }));
     }
   });
 

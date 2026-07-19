@@ -52,7 +52,8 @@ export const assetTypeEnum = pgEnum("asset_type", [
   "show_notes",         // Structured show notes (markdown)
   "blog_post",          // Long-form blog post derived from transcript
   "social_post",        // Platform-specific social media copy
-  "guest_media_pack",   // Asset bundle for the podcast guest
+  "guest_media_pack",     // Asset bundle for the podcast guest (markdown)
+  "guest_media_pack_pdf", // Branded PDF version of the guest media pack
 ]);
 
 /**

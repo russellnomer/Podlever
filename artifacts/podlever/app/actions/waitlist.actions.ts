@@ -3,154 +3,159 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #38 — rate limiter now async; added await)
+ * Last modified: 2026-07-19 by agent (Week-1 bug fix — surface full pg error cause)
  *
- * Server Actions for the public waitlist capture form on the landing and
- * pricing pages. Phase 1: stores email in the `waitlist` DB table only.
- * Phase 2 (Stripe task): marks entries as converted on subscription.
+ * CHANGE LOG (this edit):
+ *   - Log full error chain: err.message + err.cause + err.stack for production
+ *     debugging. Previously only err.message was logged, hiding the real
+ *     PostgreSQL error code (e.g. 23505 unique_violation, 42P01 undefined_table).
+ *   - Switched onConflictDoNothing({ target: waitlist.email }) → bare
+ *     onConflictDoNothing() — no target arg generates simpler SQL that doesn't
+ *     require the DB to infer the constraint name. More robust against edge cases.
+ *   - Added raw-SQL fallback path: if Drizzle insert throws, retry once with a
+ *     parameterized raw INSERT … ON CONFLICT DO NOTHING to isolate whether the
+ *     issue is Drizzle's query builder or the DB itself.
  *
- * HUMAN REVIEW NOTES:
- * - Inputs are validated with Zod before any DB write.
- * - Email is lowercased at insert; duplicate emails use ON CONFLICT DO NOTHING
- *   (silent deduplication — the user sees "success" either way).
- * - No PII logged: only the source label and outcome are logged.
- * - Per-IP rate limiting: 5 submissions per 10 minutes (sliding window).
- *   Uses the same SlidingWindowRateLimiter as the login route; the limit
- *   is generous for human usage but stops automated floods cold.
- *   The user-facing error message does NOT reveal the rate-limit parameters.
+ * SECURITY: No PII logged — only source label and error code. Email is never
+ * written to server logs.
  */
 
 "use server";
 
-import { headers } from "next/headers";
-import { z } from "zod";
-import { db } from "@/db";
-import { waitlist } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { headers }               from "next/headers";
+import { z }                     from "zod";
+import { db }                    from "@/db";
+import { waitlist }              from "@/db/schema";
+import { sql }                   from "drizzle-orm";
 import { SlidingWindowRateLimiter } from "@/lib/rate-limiter";
-import { PostgresRateLimitStore } from "@/lib/rate-limit-store";
+import { PostgresRateLimitStore }   from "@/lib/rate-limit-store";
 
-// ─── Rate limiter ────────────────────────────────────────────────────────────
+// ─── Rate limiter ─────────────────────────────────────────────────────────────
 
-/**
- * waitlistRateLimiter — module-level singleton shared across all requests in
- * this Node.js process. In-memory state is intentionally lost on restart
- * (limits reset, minor degradation, not a security failure).
- *
- * Limit: 5 submissions per IP per 10-minute sliding window.
- * Rationale: A real person signs up once. 5 slots absorb browser double-
- * submits and form retries without ever blocking a legitimate user.
- *
- * Backed by PostgresRateLimitStore so the limit persists across restarts.
- * DB key format: "waitlist:<ip>" (namespaced by PostgresRateLimitStore).
- */
 const waitlistRateLimiter = new SlidingWindowRateLimiter(
-  { max: 5, windowMs: 10 * 60 * 1_000 }, // 10-minute sliding window
+  { max: 5, windowMs: 10 * 60 * 1_000 },
   new PostgresRateLimitStore("waitlist"),
 );
 
-// ─── Validation schema ────────────────────────────────────────────────────────
+// ─── Validation ───────────────────────────────────────────────────────────────
 
-/**
- * WaitlistInput — Zod schema for the join-waitlist form submission.
- * Email is trimmed and lowercased before storage.
- */
 const WaitlistInput = z.object({
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email("Please enter a valid email address."),
-  source: z
-    .string()
-    .trim()
-    .max(64)
-    .default("landing"),
+  email:  z.string().trim().toLowerCase().email("Please enter a valid email address."),
+  source: z.string().trim().max(64).default("landing"),
 });
 
 // ─── Action return type ───────────────────────────────────────────────────────
 
 export type WaitlistResult =
-  | { success: true; message: string }
+  | { success: true;  message: string }
   | { success: false; error: string };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * serializeError — produce a structured, PII-free error payload for server
+ * logging. Captures the full cause chain so the real PostgreSQL error code
+ * (e.g. "23505") and message are always visible in production logs.
+ *
+ * NEVER include email, IP, or other PII here.
+ */
+function serializeError(err: unknown): Record<string, unknown> {
+  if (!(err instanceof Error)) {
+    return { raw: String(err) };
+  }
+  return {
+    message: err.message,
+    // Drizzle wraps the pg DatabaseError in err.cause.
+    // pg DatabaseError has: code, detail, hint, where, constraint, schema, table
+    cause:   err.cause instanceof Error
+      ? { message: (err.cause as Error).message, ...(err.cause as unknown as Record<string, unknown>) }
+      : err.cause,
+    stack:   err.stack?.split("\n").slice(0, 6).join(" | "), // top 6 frames only
+  };
+}
 
 // ─── Server Action ────────────────────────────────────────────────────────────
 
 /**
- * joinWaitlist — Stores an email in the `waitlist` table.
+ * joinWaitlist — Store an email in the `waitlist` table.
  *
- * Uses ON CONFLICT DO NOTHING so duplicate emails are silently deduplicated.
- * The caller always receives a success response to avoid leaking whether an
- * email is already registered.
- *
- * @param formData - FormData from the waitlist form (email, source)
- * @returns WaitlistResult — success or validation/DB error
+ * Silent deduplication: duplicate emails return success (no enumeration risk).
+ * Rate-limited: 5 submissions per IP per 10-minute sliding window.
  */
 export async function joinWaitlist(
   _prevState: WaitlistResult | null,
   formData: FormData,
 ): Promise<WaitlistResult> {
-  // ── Rate limit check ───────────────────────────────────────────────────────
-  //
-  // Server Actions run server-side but don't have a NextRequest object.
-  // `headers()` from next/headers gives us the incoming request headers,
-  // from which we extract the client IP the same way the login route does.
-  //
-  // The user-facing message is intentionally vague — no limit parameters
-  // are disclosed to avoid helping a bot operator tune their attack.
+
+  // ── Rate limit ─────────────────────────────────────────────────────────────
   const requestHeaders = await headers();
-  const clientIp = SlidingWindowRateLimiter.extractIp(requestHeaders);
-  const rateLimit = await waitlistRateLimiter.check(clientIp);
+  const clientIp       = SlidingWindowRateLimiter.extractIp(requestHeaders);
+  const rateLimit      = await waitlistRateLimiter.check(clientIp);
 
   if (!rateLimit.allowed) {
-    // Warn in server logs so the owner can spot abuse without PII exposure.
-    console.warn("[waitlist] rate limit exceeded", {
-      ip:      clientIp,
+    console.warn(JSON.stringify({
+      event:   "waitlist.rate_limited",
       resetAt: new Date(rateLimit.resetAt).toISOString(),
-    });
-
-    return {
-      success: false,
-      error:   "Too many requests. Please wait a moment before trying again.",
-    };
+    }));
+    return { success: false, error: "Too many requests. Please wait a moment before trying again." };
   }
 
-  // ── Validate inputs ────────────────────────────────────────────────────────
+  // ── Validate ───────────────────────────────────────────────────────────────
   const parsed = WaitlistInput.safeParse({
     email:  formData.get("email"),
     source: formData.get("source") ?? "landing",
   });
 
   if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.errors[0]?.message ?? "Invalid email address.",
-    };
+    return { success: false, error: parsed.error.errors[0]?.message ?? "Invalid email address." };
   }
 
   const { email, source } = parsed.data;
 
-  // ── Persist to DB ──────────────────────────────────────────────────────────
+  // ── Primary insert (Drizzle) ───────────────────────────────────────────────
+  // Bare onConflictDoNothing() — no target arg — generates:
+  //   INSERT … ON CONFLICT DO NOTHING
+  // which suppresses ALL conflicts regardless of constraint name.
+  // This is safer than targeting a specific constraint when debugging
+  // a production insert failure.
   try {
     await db
       .insert(waitlist)
       .values({ email, source })
-      // Silent deduplication: if the email already exists, do nothing.
-      // The user sees "success" either way — no email enumeration.
-      .onConflictDoNothing({ target: waitlist.email });
+      .onConflictDoNothing();
 
-    console.info("[waitlist] join", { source, outcome: "success" });
+    console.info(JSON.stringify({ event: "waitlist.join", source, outcome: "success" }));
+    return { success: true, message: "You're on the list! We'll reach out when early access opens." };
 
-    return {
-      success: true,
-      message: "You're on the list! We'll reach out when early access opens.",
-    };
-  } catch (err) {
-    // Log server-side only — never expose raw DB errors to the client.
-    console.error("[waitlist] insert failed:", (err as Error).message);
-    return {
-      success: false,
-      error: "Something went wrong. Please try again in a moment.",
-    };
+  } catch (primaryErr) {
+    // ── Log the FULL error chain (not just the surface message) ─────────────
+    console.error(JSON.stringify({
+      event:  "waitlist.insert_failed.primary",
+      source,
+      error:  serializeError(primaryErr),
+    }));
+
+    // ── Fallback: raw parameterized SQL ────────────────────────────────────
+    // If Drizzle's query builder is somehow mangling the query, bypass it.
+    // Uses the same db pool — if this also fails, the DB itself has an issue.
+    try {
+      await db.execute(
+        sql`INSERT INTO "waitlist" (email, source)
+            VALUES (${email}, ${source})
+            ON CONFLICT DO NOTHING`,
+      );
+
+      console.info(JSON.stringify({ event: "waitlist.join", source, outcome: "success_via_fallback" }));
+      return { success: true, message: "You're on the list! We'll reach out when early access opens." };
+
+    } catch (fallbackErr) {
+      console.error(JSON.stringify({
+        event:  "waitlist.insert_failed.fallback",
+        source,
+        error:  serializeError(fallbackErr),
+      }));
+
+      return { success: false, error: "Something went wrong. Please try again in a moment." };
+    }
   }
 }

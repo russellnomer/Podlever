@@ -28,7 +28,7 @@ import { episodes } from "./episodes";
  * Extend this list (no migration needed — stored as text) as new billable
  * actions are added.
  */
-export const USAGE_EVENT_TYPES = ["episode_processed"] as const;
+export const USAGE_EVENT_TYPES = ["episode_processed", "asset_regenerated"] as const;
 export type UsageEventType = (typeof USAGE_EVENT_TYPES)[number];
 
 // ─── Table ─────────────────────────────────────────────────────────────────
