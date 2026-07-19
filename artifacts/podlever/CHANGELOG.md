@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.0-alpha.3] — 2026-07-19 — Pricing Model + Unit Economics (Task #12)
+
+### Pricing Decisions
+
+**PodLever Pricing Model v2.1 — Approved for implementation**
+
+All prices and unit economics locked. Task #13 (landing page) and Task #14 (Stripe) read
+from `docs/pricing/pricing-model-v2.1-approved.md`.
+
+| Tier | Monthly | Annual (18% off) | Episodes/mo |
+|---|---|---|---|
+| Free | $0 | — | 3 |
+| Creator | $39/mo | $32/mo ($384/yr) | 8 |
+| Professional | $99/mo | $81/mo ($972/yr) | 20 |
+| Studio | $249/mo | $204/mo ($2,448/yr) | 50 |
+
+**Managed AI Credits:** $7.00/ep · 10-pack $65 ($6.50/ep) · 25-pack $150 ($6.00/ep)
+
+**Free-tier guardrails:** 15% free→Creator conversion KPI (60 days); 500-account cap before waitlist
+
+### Unit Economics Audit
+
+Live AI rates fetched 2026-07-18. Recommended stack COGS: **$0.37–$0.80/episode**
+= **89–95% gross margin** at $7.00. Planning floor remains $2.00 (conservative worst-case).
+
+### AI Model Routing Policy (mandatory for Task #2 pipeline)
+
+- Primary LLM: Anthropic Haiku 4.5 + prompt caching required
+- Primary transcription: AssemblyAI Universal-3.5 Pro
+- Per-episode COGS ceiling: $1.00 alert / $1.50 hard block
+- Max 3 retries per asset call
+
+### Added
+- `docs/pricing/pricing-model-v2.1-approved.md` — single source of truth for all prices
+- `docs/pricing/model-routing-policy.md` — AI model routing and cost ceiling policy
+- `docs/pricing/unit-economics-audit-2026-07-18.md` — full COGS audit with live rate data
+- `.agents/skills/unit-economics-guardrail/rates.json` — live rates cache (expires 30 days)
+
+---
+
 ## [0.1.0-alpha.2] — 2026-07-18 — Proxy Routing Decision + Verification (Task #4)
 
 ### Architecture Decision
