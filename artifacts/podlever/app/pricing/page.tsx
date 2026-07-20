@@ -227,7 +227,7 @@ export default async function PricingPage({
             <span className="font-bold text-white tracking-tight">PodLever</span>
           </Link>
           <Link
-            href="/auth/login"
+            href="/auth/login?next=/dashboard"
             className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 text-sm font-semibold transition-colors"
           >
             Get started free
@@ -304,7 +304,7 @@ export default async function PricingPage({
               displayPrices={DISPLAY_PRICES.free}
               highlight={false}
               badge={null}
-              cta={{ kind: "link", href: "/auth/login", label: "Start for free", variant: "outline" }}
+              cta={{ kind: "link", href: "/auth/login?next=/dashboard", label: "Start for free", variant: "outline" }}
               perks={[
                 "1 episode per month",
                 "Transcript + show notes",
@@ -493,7 +493,7 @@ export default async function PricingPage({
           </p>
           <div className="flex flex-col items-center gap-4">
             <Link
-              href="/auth/login"
+              href="/auth/login?next=/dashboard"
               className="w-full max-w-xs px-8 py-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold text-base transition-colors text-center"
             >
               Start free — no card needed

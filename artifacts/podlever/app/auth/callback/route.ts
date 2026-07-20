@@ -60,6 +60,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const tempResponse = new NextResponse();
   let pkceSession: Awaited<ReturnType<typeof getIronSession<PkceState>>>;
 
+  // Derive the canonical public origin from proxy headers.
+  // In Replit Autoscale, request.url is an internal address (http://localhost:PORT).
+  // getCallbackUrl() reads x-forwarded-host to get the real public hostname.
+  // Every redirect in this handler MUST use appOrigin — never request.url.
+  const canonicalCallbackUrl = getCallbackUrl(request);
+  const appOrigin = new URL(canonicalCallbackUrl).origin; // e.g. https://podlever.com
+
   try {
     pkceSession = await getIronSession<PkceState>(
       request,
@@ -68,24 +75,34 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   } catch {
     console.error("[auth/callback] PKCE cookie decrypt failed — possible tampering or expiry");
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+    return NextResponse.redirect(new URL("/auth/login", appOrigin));
   }
 
   if (!pkceSession.codeVerifier || !pkceSession.state || !pkceSession.nonce) {
     console.error("[auth/callback] PKCE state incomplete — restarting login flow");
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+    return NextResponse.redirect(new URL("/auth/login", appOrigin));
   }
 
-  const { codeVerifier, state, nonce } = pkceSession;
+  const { codeVerifier, state, nonce, nextUrl } = pkceSession;
 
   // ── Step 2: Exchange authorization code for tokens ───────────────────────────
-  // authorizationCodeGrant takes a URL | Request as the second argument.
-  // Passing `request` (NextRequest extends Request) satisfies the type.
+  // IMPORTANT: authorizationCodeGrant must receive a URL whose base matches
+  // the redirect_uri sent in the original authorization request.
+  //
+  // In Replit Autoscale, request.url is an internal address such as
+  // http://localhost:3000/auth/callback — passing it directly causes a
+  // redirect_uri mismatch at Replit's token endpoint (invalid_grant error).
+  //
+  // Fix: construct a canonical URL from getCallbackUrl() (which reads
+  // x-forwarded-host) and graft the original query params (code, state, iss)
+  // onto it. This matches exactly what was sent in the authorization request.
   let claims: oidcClient.IDToken;
 
   try {
     const config = await getOidcConfig();
-    const tokens = await oidcClient.authorizationCodeGrant(config, request, {
+    const canonicalUrl = new URL(canonicalCallbackUrl);
+    canonicalUrl.search = new URL(request.url).search; // preserve ?code=&state=&iss=
+    const tokens = await oidcClient.authorizationCodeGrant(config, canonicalUrl, {
       pkceCodeVerifier: codeVerifier,
       expectedState:    state,
       expectedNonce:    nonce,
@@ -95,7 +112,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     claims = tokens.claims()!;
   } catch (err) {
     console.error("[auth/callback] Token exchange failed:", (err as Error).message);
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+    return NextResponse.redirect(new URL("/auth/login", appOrigin));
   }
 
   // ── Step 3: Extract identity from validated claims ────────────────────────────
@@ -171,7 +188,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   } catch (err) {
     console.error("[auth/callback] User upsert failed:", (err as Error).message);
-    return NextResponse.redirect(new URL("/auth/login?error=db", request.url));
+    return NextResponse.redirect(new URL("/auth/login?error=db", appOrigin));
   }
 
   // ── Step 6: Emit structured security audit log ────────────────────────────────
@@ -184,7 +201,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }));
 
   // ── Step 7: Write session cookie and redirect ─────────────────────────────────
-  const response = NextResponse.redirect(new URL("/", request.url));
+  // Honor the intended destination stored in the PKCE cookie at login time.
+  // Validate it starts with "/" to prevent open-redirect attacks.
+  const safeNext = nextUrl?.startsWith("/") ? nextUrl : "/dashboard";
+  const response = NextResponse.redirect(new URL(safeNext, appOrigin));
 
   const session = await getIronSession<PodLeverSession>(
     request,

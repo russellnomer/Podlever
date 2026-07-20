@@ -91,6 +91,8 @@ export interface PkceState {
   state: string;
   /** OIDC nonce — prevents token replay */
   nonce: string;
+  /** Intended destination after login — validated and honoured by /auth/callback */
+  nextUrl?: string;
 }
 
 // ─── Iron-Session configuration ───────────────────────────────────────────────

@@ -135,9 +135,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       response,
       getPkceStateOptions(),
     );
+    // Capture the intended post-login destination so /auth/callback can redirect
+    // the user to where they were trying to go instead of always landing on "/".
+    // Validated in /auth/callback: must start with "/" (open-redirect guard).
+    const nextUrl = request.nextUrl.searchParams.get("next") ?? "/dashboard";
     pkceSession.codeVerifier = codeVerifier;
     pkceSession.state        = state;
     pkceSession.nonce        = nonce;
+    pkceSession.nextUrl      = nextUrl;
     await pkceSession.save();
 
     return response;
