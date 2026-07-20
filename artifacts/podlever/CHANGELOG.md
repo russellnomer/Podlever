@@ -5,20 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased] — 2026-07-20
 
-### Removed — Dolby.io audio provider
-- **Dolby removed from provider chain**: Dolby.io confirmed in writing (Jul 19, 2026) that they are no longer onboarding new Media API customers and have stopped new Enterprise contracts. `lib/audio/providers/dolby.ts` deleted. `"dolby"` and `"dolby-enhance"` entries removed from `PRICING_USD` in `lib/cogs.ts`. Historical `episode_cogs` rows with `model = 'dolby-enhance'` are untouched.
-- **New provider chain: Adobe → FFmpeg**. Adobe Podcast Enhance (free beta, activated by `ADOBE_ENHANCE_API_KEY`) runs first; FFmpeg is the always-on fallback at $0 cost.
+### Removed — Adobe audio provider (Task #64)
+- **Adobe Podcast Enhance removed from provider chain**: Confirmed (Jul 20, 2026) that `podcast.adobe.com/enhance` is a browser-only tool with no public developer API. `lib/audio/providers/adobe.ts` deleted. `"adobe"` key replaced with `"ffmpeg-adaptive"` in `PRICING_USD`. `ADOBE_ENHANCE_API_KEY` env var is now unused — do not set it.
+- **Provider chain is now fully self-hosted**: All audio processing runs on-container with zero external API dependencies and zero ongoing cost.
+
+### Removed — Dolby.io audio provider (prior session, Jul 19)
+- **Dolby removed from provider chain**: Dolby.io confirmed in writing (Jul 19, 2026) that they are no longer onboarding new Media API customers. `lib/audio/providers/dolby.ts` deleted. Historical `episode_cogs` rows with `model = 'dolby-enhance'` are untouched.
 - All Dolby references purged from UI copy, comments, and schema docs. User-visible label updated from `"Noise-reduced · normalized · Dolby.io"` to `"Noise-reduced · loudness normalized"`.
 
-### Changed (audio pipeline — Board moves 1 & 2)
-- **Audio provider abstraction layer** (`lib/audio/`): Replaced the single Dolby-only path with a resilient provider chain. Original chain was Dolby → Adobe → FFmpeg; reduced to Adobe → FFmpeg after Dolby shutdown. Any provider failure falls through to the next automatically. FFmpeg is the guaranteed last resort — it runs locally, requires no credentials, and cannot be externally disrupted.
-- **FFmpeg provider** (`lib/audio/providers/ffmpeg.ts`): Noise reduction (`afftdn=nf=-25`) + EBU R128 loudness normalization (`loudnorm=I=-16:TP=-1.5:LRA=11`), mono output at 44.1 kHz. Runs in 5–30s depending on episode length. Cost: $0. Always available on the Replit container.
-- **Adobe Podcast Enhance provider** (`lib/audio/providers/adobe.ts`): Free during beta. Submit → poll → download pattern. Activated by setting `ADOBE_ENHANCE_API_KEY` in Replit Secrets.
-- **Process route updated**: Audio enhancement calls `enhanceAudio(originalBuffer, mimeType, episodeId)`. COGS keys are now `"adobe"` and `"ffmpeg"` only.
-- **Asset label**: The `cleaned_audio` asset label reflects the actual provider used (e.g. `"ffmpeg enhanced audio"`).
-- **Deleted**: `lib/audio-cleanup.ts` (replaced earlier session) and `lib/audio/providers/dolby.ts`.
+### Added — ffmpeg-adaptive provider / Task #64 (self-hosted AI audio)
+- **`lib/audio/providers/ffmpeg-adaptive.ts`**: Uses FFmpeg's built-in `anlmdn` filter — Non-Local Means Denoiser. The same algorithm underpins professional audio restoration tools (Cedar, iZotope RX). Unlike `afftdn` (fixed noise-floor threshold), `anlmdn` adapts to each recording's own noise profile and handles intermittent noise (chair movement, typing, paper rustle) significantly better.
+- **New provider chain**: `ffmpeg-adaptive` (anlmdn) → `ffmpeg` (afftdn). Both tiers cost $0. ffmpeg is the guaranteed last resort.
+- **Why not RNNoise or Demucs**: RNNoise binary is not in the Nix store; Demucs requires Python + PyTorch (~500 MB) and Python is not installed on this container; FFmpeg's `arnndn` (RNN denoiser) requires a `.rnnn` model file from a repo that returned 404 as of 2026-07-20. `anlmdn` achieves comparable voice-denoising quality without any of those dependencies.
+- **COGS key**: `"ffmpeg-adaptive"` at `perMinute: 0` in `PRICING_USD`.
 
-### Not built (by design — Board move 3)
+### Changed (audio pipeline — Board moves 1 & 2)
+- **Audio provider abstraction layer** (`lib/audio/`): Resilient provider chain with automatic fallback. FFmpeg is the guaranteed last resort — runs locally, needs no credentials, cannot be externally disrupted.
+- **FFmpeg provider** (`lib/audio/providers/ffmpeg.ts`): `afftdn=nf=-25` + EBU R128 loudness normalization. Always-on guaranteed fallback. Cost: $0.
+- **Process route updated**: COGS keys updated to `"ffmpeg-adaptive"` and `"ffmpeg"`. Adobe reference removed from comments and privacy notice.
+- **Asset label**: The `cleaned_audio` asset label reflects the actual provider used.
+- **Deleted**: `lib/audio-cleanup.ts`, `lib/audio/providers/dolby.ts`, `lib/audio/providers/adobe.ts`.
+
+### Not built (by design)
 - No user-facing provider picker UI. Audio enhancement runs silently for every episode.
 - No affiliate/referral CTA. Revisit at 100 paying users.
 

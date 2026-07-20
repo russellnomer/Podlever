@@ -41,8 +41,8 @@ export const PRICING_USD = {
     per1kTokensInput:  0.0025,   // $2.50 / 1M = $0.0025 / 1K
     per1kTokensOutput: 0.010,    // $10.00 / 1M = $0.010 / 1K
   },
-  /** Adobe Podcast Enhance: free during beta */
-  "adobe": {
+  /** ffmpeg-adaptive: Non-Local Means denoiser (anlmdn) — $0, self-hosted */
+  "ffmpeg-adaptive": {
     type:              "audio" as const,
     perMinute:         0,
   },

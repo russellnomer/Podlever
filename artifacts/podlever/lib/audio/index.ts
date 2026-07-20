@@ -3,39 +3,42 @@
  *
  * Part of: PodLever
  * Created: 2026-07-20 by agent (Board move 1 — provider abstraction + resilience)
- * Updated: 2026-07-20 — Dolby removed; Dolby.io confirmed no new API customers (Jul 19 2026)
+ * Updated: 2026-07-20 — Dolby removed (Jul 19); Adobe removed (Jul 20, no public API)
+ * Updated: 2026-07-20 — ffmpeg-adaptive (anlmdn) added as middle tier (Task #64)
  *
  * This is the ONLY file callers should import. Never import providers directly.
  *
  * PROVIDER CHAIN (evaluated in order):
- *   1. Adobe  — excellent quality, free beta; requires ADOBE_ENHANCE_API_KEY
- *   2. FFmpeg — good quality, always available, $0 cost — the guaranteed fallback
+ *   1. ffmpeg-adaptive — Non-Local Means denoiser (anlmdn). Adapts to each recording's
+ *                        own noise profile. No API key, no model file, $0 cost.
+ *                        Same algorithm as iZotope RX / Cedar professional tools.
+ *   2. ffmpeg          — afftdn + loudnorm. Fixed noise-floor threshold denoiser.
+ *                        Always available; the guaranteed last resort.
+ *
+ * PROVIDERS REMOVED:
+ *   - Dolby.io (Jul 19 2026): confirmed no new API customers.
+ *   - Adobe Podcast Enhance (Jul 20 2026): browser-only tool, no public developer API.
  *
  * FALLBACK BEHAVIOUR:
- *   Any provider failure (network, API error, timeout, missing credentials) is
- *   caught and logged. The chain moves to the next provider automatically.
- *   The caller always receives a result — enhanced audio is guaranteed.
- *
- *   If Adobe is unavailable or fails, FFmpeg runs as the final safety net.
- *   FFmpeg is always available on the Replit container and cannot fail unless
- *   the temp filesystem is full or the input is corrupt.
+ *   Any provider failure (timeout, bad input, temp disk full) is caught and logged.
+ *   The chain moves to the next provider automatically. The caller always receives a
+ *   result. ffmpegProvider is the guaranteed last resort — it runs locally, needs no
+ *   credentials, and cannot be externally disrupted.
  *
  * PRODUCT POSITIONING:
- *   Audio enhancement runs silently for every episode.
- *   There is no user-facing provider picker (revisit at 100 paying users).
- *   The provider that ran is logged for ops visibility and stored in the asset label.
+ *   Audio enhancement runs silently for every episode. No user-facing provider picker
+ *   (revisit when adding a paid external API at scale). The provider that ran is logged
+ *   for ops visibility and stored in the COGS record.
  *
- * COST:
- *   Adobe: $0 (beta) | FFmpeg: $0
- *   COGS are recorded by the process route using result.provider.
+ * COST: $0 both tiers.
  *
  * SECURITY: server-only — never import from client components.
  */
 
 import "server-only";
 
-import { adobeProvider }  from "./providers/adobe";
-import { ffmpegProvider } from "./providers/ffmpeg";
+import { ffmpegAdaptiveProvider } from "./providers/ffmpeg-adaptive";
+import { ffmpegProvider }         from "./providers/ffmpeg";
 import type { AudioProvider, EnhancementResult } from "./types";
 
 // Re-export types so callers only need one import path
@@ -44,17 +47,16 @@ export type { EnhancementResult } from "./types";
 // ─── Provider chain ───────────────────────────────────────────────────────────
 
 /**
- * PROVIDER_CHAIN — ordered list of enhancement providers.
+ * PROVIDER_CHAIN — ordered list of enhancement providers, best-first.
  *
- * External providers are attempted first (best quality). FFmpeg is always
- * last — it cannot be disabled and provides the guaranteed fallback.
+ * ffmpegProvider must always be last — it is the no-fail guaranteed fallback.
  *
- * To add a provider: implement AudioProvider, import it here, insert it in
- * the chain above ffmpegProvider.
+ * To add a provider: implement AudioProvider, import it here, insert it above
+ * ffmpegProvider. The chain evaluates isAvailable() before attempting enhance().
  */
 const PROVIDER_CHAIN: AudioProvider[] = [
-  adobeProvider,   // free beta — available when ADOBE_ENHANCE_API_KEY is set
-  ffmpegProvider,  // always available — guaranteed last resort
+  ffmpegAdaptiveProvider, // anlmdn — adaptive Non-Local Means denoiser, $0
+  ffmpegProvider,         // afftdn — always-on guaranteed fallback, $0
 ];
 
 // ─── Public API ───────────────────────────────────────────────────────────────
