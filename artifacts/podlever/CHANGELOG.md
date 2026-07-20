@@ -3,6 +3,22 @@
 All notable changes to PodLever are documented here.  
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — 2026-07-20
+
+### Changed (audio pipeline — Board moves 1 & 2)
+- **Audio provider abstraction layer** (`lib/audio/`): Replaced the single Dolby-only path with a resilient provider chain. Provider order: Dolby → Adobe → FFmpeg. Any provider failure falls through to the next automatically. FFmpeg is the guaranteed last resort — it runs locally, requires no credentials, and cannot be externally disrupted.
+- **FFmpeg provider** (`lib/audio/providers/ffmpeg.ts`): Noise reduction (`afftdn=nf=-25`) + EBU R128 loudness normalization (`loudnorm=I=-16:TP=-1.5:LRA=11`), mono output at 44.1 kHz. Runs in 5–30s depending on episode length. Cost: $0. Always available on the Replit container.
+- **Dolby provider** (`lib/audio/providers/dolby.ts`): Refactored from `lib/audio-cleanup.ts`. Input is now a Buffer (direct PUT upload to Dolby's media input endpoint) instead of a pre-signed GCS URL. Same quality, no GCS signed URL dependency.
+- **Adobe Podcast Enhance provider** (`lib/audio/providers/adobe.ts`): New integration. Free during beta. Submit → poll → download pattern. Activated by setting `ADOBE_ENHANCE_API_KEY` in Replit Secrets.
+- **Process route updated**: Removed `getSignedDownloadUrl` dependency (was only used for Dolby). Audio enhancement now calls `enhanceAudio(originalBuffer, mimeType, episodeId)` — cleaner, no signed URL generation.
+- **COGS tracking**: Provider name (`"dolby"`, `"adobe"`, `"ffmpeg"`) now flows through to COGS records. Adobe and FFmpeg record $0 cost. Added provider aliases to `PRICING_USD`.
+- **Asset label**: The `cleaned_audio` asset label now reflects the actual provider used (e.g. `"ffmpeg enhanced audio"`) instead of hardcoding `"Dolby.io enhanced audio"`.
+- **Deleted**: `lib/audio-cleanup.ts` — fully replaced by `lib/audio/providers/dolby.ts`.
+
+### Not built (by design — Board move 3)
+- No user-facing provider picker UI. Audio enhancement runs silently for every episode.
+- No affiliate/referral CTA. Revisit at 100 paying users.
+
 ## [Unreleased] — 2026-07-19
 
 ### Fixed

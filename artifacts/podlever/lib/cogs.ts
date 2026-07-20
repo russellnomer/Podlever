@@ -46,6 +46,21 @@ export const PRICING_USD = {
     type:              "audio" as const,
     perMinute:         0.003,
   },
+  /** Dolby provider (alias — matches provider.name from lib/audio) */
+  "dolby": {
+    type:              "audio" as const,
+    perMinute:         0.003,
+  },
+  /** Adobe Podcast Enhance: free during beta */
+  "adobe": {
+    type:              "audio" as const,
+    perMinute:         0,
+  },
+  /** FFmpeg: local processing, no API cost */
+  "ffmpeg": {
+    type:              "audio" as const,
+    perMinute:         0,
+  },
 } as const;
 
 export type PricedModel = keyof typeof PRICING_USD;

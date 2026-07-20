@@ -18,7 +18,20 @@ description: Architecture decisions for the 8-feature gap-closure build (audio c
 - Job enqueued BEFORE `after()` fires — survives worker trigger failures
 - Exponential backoff: 30s → 5min → 30min between retries
 
-## Audio Cleanup (Dolby.io)
+## Audio Enhancement (Provider Abstraction — lib/audio/)
+
+### Architecture (Board move — 2026-07-20)
+- `lib/audio/index.ts` — `enhanceAudio(buffer, mimeType, episodeId)` — only public export
+- Provider chain: Dolby → Adobe → FFmpeg (any failure falls through automatically)
+- FFmpeg is always last and cannot be disabled — guaranteed fallback
+- Add new providers by implementing `AudioProvider` interface and inserting above `ffmpegProvider` in the chain
+- Process route calls `enhanceAudio(originalBuffer, mimeType, episodeId)` — no signed URL needed
+- `lib/audio-cleanup.ts` deleted — replaced by `lib/audio/providers/dolby.ts`
+- COGS keys: `"dolby"`, `"adobe"`, `"ffmpeg"` all exist in `PRICING_USD` — provider.name maps directly
+- Adobe activated by `ADOBE_ENHANCE_API_KEY`; Dolby by `DOLBY_API_APP_KEY` + `DOLBY_API_APP_SECRET`
+- **Why:** Vendor lock-in risk (single Dolby dependency) + resilience (auto-fallback) + $0 default (FFmpeg)
+
+## Audio Cleanup (Dolby.io — legacy note)
 - Graceful fallback if `DOLBY_API_APP_KEY` / `DOLBY_API_APP_SECRET` not set
 - Flow: auth token → register input URL (signed GCS URL) → submit enhance job → poll → download → GCS upload
 - Cleaned audio stored at `audio/{episodeId}/cleaned.wav`; key in `episodes.cleaned_audio_storage_key`

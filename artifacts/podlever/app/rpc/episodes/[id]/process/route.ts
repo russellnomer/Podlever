@@ -33,9 +33,8 @@ import { openai, MODELS }             from "@/lib/openai";
 import {
   downloadAudioBuffer,
   uploadFileBuffer,
-  getSignedDownloadUrl,
 }                                     from "@/lib/storage";
-import { cleanAudio }                 from "@/lib/audio-cleanup";
+import { enhanceAudio }               from "@/lib/audio";
 import { recordCogs, estimateAudioCost, estimateTokenCost, PRICING_USD } from "@/lib/cogs";
 import { generateGuestPackPdf }       from "@/lib/pdf/guest-pack";
 import {
@@ -142,50 +141,58 @@ export async function POST(
     // Estimate audio duration from file size (rough: 128kbps MP3 ≈ 16KB/s)
     const estimatedAudioSeconds = Math.round(originalBuffer.byteLength / (128 * 1024 / 8));
 
-    // ── 3. Dolby.io audio cleanup ───────────────────────────────────────────
+    // ── 3. Audio enhancement (provider abstraction — FFmpeg / Adobe / Dolby) ─
+    // enhanceAudio selects the best available provider and falls back through
+    // the chain automatically. FFmpeg is always the guaranteed last resort.
     let processedBuffer: Buffer = originalBuffer;
     let processedMime:   string = mimeType;
 
-    // Get a 15-min signed URL for Dolby to fetch our audio as input
-    const signedInputUrl = await getSignedDownloadUrl(audioStorageKey, 15 * 60 * 1000).catch(() => null);
+    try {
+      const enhanceResult = await enhanceAudio(originalBuffer, mimeType, episodeId);
+      processedBuffer = enhanceResult.buffer;
+      processedMime   = enhanceResult.mimeType;
 
-    if (signedInputUrl) {
-      const cleanupResult = await cleanAudio(signedInputUrl, episodeId);
+      // ── 4. Upload enhanced audio to GCS ────────────────────────────────────
+      const cleanedKey = `audio/${episodeId}/cleaned.wav`;
+      await uploadFileBuffer(cleanedKey, processedBuffer, processedMime);
 
-      if (cleanupResult) {
-        processedBuffer = cleanupResult.buffer;
-        processedMime   = cleanupResult.mimeType;
+      // Update episode row with enhanced audio key
+      await db
+        .update(episodes)
+        .set({ cleanedAudioStorageKey: cleanedKey })
+        .where(eq(episodes.id, episodeId));
 
-        // ── 4. Upload cleaned audio to GCS ──────────────────────────────────
-        const cleanedKey = `audio/${episodeId}/cleaned.wav`;
-        await uploadFileBuffer(cleanedKey, processedBuffer, processedMime);
+      // Create / update the cleaned_audio asset — label reflects actual provider
+      await assetRepository.createAssetVersion({
+        episodeId,
+        assetType:  "cleaned_audio",
+        label:      `${enhanceResult.provider} enhanced audio`,
+        storageKey: cleanedKey,
+        content:    null,
+      });
 
-        // Update episode row with cleaned key
-        await db
-          .update(episodes)
-          .set({ cleanedAudioStorageKey: cleanedKey })
-          .where(eq(episodes.id, episodeId));
+      // Record COGS — provider.name matches PRICING_USD keys ("dolby", "adobe", "ffmpeg")
+      type AudioModel = Parameters<typeof estimateAudioCost>[0];
+      const knownModels = new Set<string>(["dolby", "adobe", "ffmpeg", "dolby-enhance", "gpt-4o-mini-transcribe", "gpt-5.6-luna"]);
+      const enhanceModel = (knownModels.has(enhanceResult.provider) ? enhanceResult.provider : "ffmpeg") as AudioModel;
+      const enhanceCost  = estimateAudioCost(enhanceModel, estimatedAudioSeconds);
+      recordCogs({
+        episodeId,
+        userId:       ownerId,
+        step:         "audio_cleanup",
+        model:        enhanceResult.provider,
+        audioSeconds: estimatedAudioSeconds,
+        costUsd:      enhanceCost,
+      }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: "audio_cleanup", error: String(err) })));
 
-        // Create / update the cleaned_audio asset
-        await assetRepository.createAssetVersion({
-          episodeId,
-          assetType:  "cleaned_audio",
-          label:      "Dolby.io enhanced audio",
-          storageKey: cleanedKey,
-          content:    null,
-        });
-
-        // Log COGS for cleanup ($0.003/min)
-        const cleanupCost = estimateAudioCost("dolby-enhance", estimatedAudioSeconds);
-        recordCogs({
-          episodeId,
-          userId:       ownerId,
-          step:         "audio_cleanup",
-          model:        "dolby-enhance",
-          audioSeconds: estimatedAudioSeconds,
-          costUsd:      cleanupCost,
-        }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: "audio_cleanup", error: String(err) })));
-      }
+    } catch (err) {
+      // All providers failed (extremely rare — FFmpeg should always succeed).
+      // Log and continue with original audio; transcription still works.
+      console.warn(JSON.stringify({
+        event:     "audio.enhance.all_failed",
+        episodeId,
+        error:     err instanceof Error ? err.message : String(err),
+      }));
     }
 
     // ── 5. Transcribe with Whisper ──────────────────────────────────────────
