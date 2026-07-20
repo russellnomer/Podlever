@@ -68,8 +68,8 @@ const PUBLIC_PREFIXES = [
   "/opengraph-image",
 ];
 
-/** Auth flow routes — always open. */
-const AUTH_PATHS = ["/auth/", "/verify-access", "/waitlisted", "/onboarding"];
+/** Auth flow routes — always open. No trailing slashes — isAuthPath appends "/" for prefix matching. */
+const AUTH_PATHS = ["/auth", "/verify-access", "/waitlisted", "/onboarding"];
 
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true;
