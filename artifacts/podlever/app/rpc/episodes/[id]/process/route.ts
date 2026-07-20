@@ -10,7 +10,7 @@
  * Pipeline (in order):
  *   1.  Fetch episode + verify audio key exists
  *   2.  Download original audio from GCS
- *   3.  Dolby.io audio cleanup (graceful fallback if not configured)
+ *   3.  Audio enhancement (Adobe → FFmpeg provider chain)
  *   4.  Upload cleaned audio to GCS → update episode.cleanedAudioStorageKey
  *   5.  Transcribe via Whisper → log COGS
  *   6.  Store transcript asset
@@ -24,7 +24,7 @@
  *
  * SECURITY: server-only. Authorized by CRON_SECRET. No PII in logs.
  * PRIVACY: OpenAI chat calls include user: "none" (disables per-user tracking).
- *          Audio content is sent to OpenAI Whisper and Dolby.io per our privacy policy.
+ *          Audio content is sent to OpenAI Whisper and (if configured) Adobe Podcast Enhance per our privacy policy.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -141,7 +141,7 @@ export async function POST(
     // Estimate audio duration from file size (rough: 128kbps MP3 ≈ 16KB/s)
     const estimatedAudioSeconds = Math.round(originalBuffer.byteLength / (128 * 1024 / 8));
 
-    // ── 3. Audio enhancement (provider abstraction — FFmpeg / Adobe / Dolby) ─
+    // ── 3. Audio enhancement (provider abstraction — Adobe → FFmpeg) ──────────
     // enhanceAudio selects the best available provider and falls back through
     // the chain automatically. FFmpeg is always the guaranteed last resort.
     let processedBuffer: Buffer = originalBuffer;
@@ -171,9 +171,9 @@ export async function POST(
         content:    null,
       });
 
-      // Record COGS — provider.name matches PRICING_USD keys ("dolby", "adobe", "ffmpeg")
+      // Record COGS — provider.name matches PRICING_USD keys ("adobe", "ffmpeg")
       type AudioModel = Parameters<typeof estimateAudioCost>[0];
-      const knownModels = new Set<string>(["dolby", "adobe", "ffmpeg", "dolby-enhance", "gpt-4o-mini-transcribe", "gpt-5.6-luna"]);
+      const knownModels = new Set<string>(["adobe", "ffmpeg", "gpt-4o-mini-transcribe", "gpt-5.6-luna"]);
       const enhanceModel = (knownModels.has(enhanceResult.provider) ? enhanceResult.provider : "ffmpeg") as AudioModel;
       const enhanceCost  = estimateAudioCost(enhanceModel, estimatedAudioSeconds);
       recordCogs({

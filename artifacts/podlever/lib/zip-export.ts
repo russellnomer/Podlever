@@ -16,7 +16,7 @@
  *     social-posts.md
  *     guest-media-pack.md
  *     original-audio.{ext}      (if available)
- *     cleaned-audio.wav         (if Dolby cleanup ran)
+ *     cleaned-audio.wav         (if audio enhancement ran)
  *     _meta.json                (episode metadata)
  *
  * HUMAN REVIEW NOTES:
@@ -50,7 +50,7 @@ export interface ZipInput {
     title: string;
     /** GCS key for original audio; null if not uploaded. */
     audioStorageKey:        string | null;
-    /** GCS key for Dolby-cleaned audio; null if cleanup didn't run. */
+    /** GCS key for enhanced audio; null if enhancement didn't run. */
     cleanedAudioStorageKey: string | null;
   };
   /** Latest-version assets for this episode. */
@@ -111,7 +111,7 @@ export async function buildEpisodeZip(input: ZipInput): Promise<Buffer> {
     }
   }
 
-  // ── Cleaned audio (Dolby output) ─────────────────────────────────────────────
+  // ── Cleaned audio (enhanced output) ───────────────────────────────────────────
   if (episode.cleanedAudioStorageKey) {
     try {
       const buffer = await downloadAudioBuffer(episode.cleanedAudioStorageKey);

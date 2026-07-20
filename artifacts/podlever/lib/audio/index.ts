@@ -3,20 +3,20 @@
  *
  * Part of: PodLever
  * Created: 2026-07-20 by agent (Board move 1 — provider abstraction + resilience)
+ * Updated: 2026-07-20 — Dolby removed; Dolby.io confirmed no new API customers (Jul 19 2026)
  *
  * This is the ONLY file callers should import. Never import providers directly.
  *
  * PROVIDER CHAIN (evaluated in order):
- *   1. Dolby.io    — best quality; requires DOLBY_API_APP_KEY + DOLBY_API_APP_SECRET
- *   2. Adobe       — excellent quality, free beta; requires ADOBE_ENHANCE_API_KEY
- *   3. FFmpeg      — good quality, always available, $0 cost — the guaranteed fallback
+ *   1. Adobe  — excellent quality, free beta; requires ADOBE_ENHANCE_API_KEY
+ *   2. FFmpeg — good quality, always available, $0 cost — the guaranteed fallback
  *
  * FALLBACK BEHAVIOUR:
  *   Any provider failure (network, API error, timeout, missing credentials) is
  *   caught and logged. The chain moves to the next provider automatically.
  *   The caller always receives a result — enhanced audio is guaranteed.
  *
- *   If all external providers fail, FFmpeg runs as the final safety net.
+ *   If Adobe is unavailable or fails, FFmpeg runs as the final safety net.
  *   FFmpeg is always available on the Replit container and cannot fail unless
  *   the temp filesystem is full or the input is corrupt.
  *
@@ -26,7 +26,7 @@
  *   The provider that ran is logged for ops visibility and stored in the asset label.
  *
  * COST:
- *   Dolby: ~$0.003/min | Adobe: $0 (beta) | FFmpeg: $0
+ *   Adobe: $0 (beta) | FFmpeg: $0
  *   COGS are recorded by the process route using result.provider.
  *
  * SECURITY: server-only — never import from client components.
@@ -34,7 +34,6 @@
 
 import "server-only";
 
-import { dolbyProvider }  from "./providers/dolby";
 import { adobeProvider }  from "./providers/adobe";
 import { ffmpegProvider } from "./providers/ffmpeg";
 import type { AudioProvider, EnhancementResult } from "./types";
@@ -54,8 +53,7 @@ export type { EnhancementResult } from "./types";
  * the chain above ffmpegProvider.
  */
 const PROVIDER_CHAIN: AudioProvider[] = [
-  dolbyProvider,   // ~Dolby quality — available when DOLBY_API_* are set
-  adobeProvider,   // ~Dolby quality — available when ADOBE_ENHANCE_API_KEY is set
+  adobeProvider,   // free beta — available when ADOBE_ENHANCE_API_KEY is set
   ffmpegProvider,  // always available — guaranteed last resort
 ];
 

@@ -41,16 +41,6 @@ export const PRICING_USD = {
     per1kTokensInput:  0.0025,   // $2.50 / 1M = $0.0025 / 1K
     per1kTokensOutput: 0.010,    // $10.00 / 1M = $0.010 / 1K
   },
-  /** Dolby.io Media Enhance: $0.003 per audio minute */
-  "dolby-enhance": {
-    type:              "audio" as const,
-    perMinute:         0.003,
-  },
-  /** Dolby provider (alias — matches provider.name from lib/audio) */
-  "dolby": {
-    type:              "audio" as const,
-    perMinute:         0.003,
-  },
   /** Adobe Podcast Enhance: free during beta */
   "adobe": {
     type:              "audio" as const,

@@ -12,7 +12,7 @@
  *   - Guest media pack PDF download button
  *   - Share button (generate public link)
  *   - Regenerate button per text asset (Pro+ plans)
- *   - Cleaned audio download row (if Dolby ran)
+ *   - Cleaned audio download row (if audio enhancement ran)
  *   - Episode COGS summary (total AI cost)
  */
 
@@ -222,14 +222,14 @@ export default async function EpisodeDetailPage({
         {/* Audio rows */}
         {(audioUrl || cleanedAudioUrl) && (
           <div className="space-y-2">
-            {/* Cleaned audio (Dolby-enhanced) — shown first if available */}
+            {/* Cleaned audio (enhanced) — shown first if available */}
             {cleanedAudioUrl && (
               <div className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50/30 px-5 py-4">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-indigo-400" />
                   <div>
                     <p className="text-sm font-semibold text-gray-800">Enhanced audio</p>
-                    <p className="text-xs text-gray-400">Noise-reduced · normalized · Dolby.io</p>
+                    <p className="text-xs text-gray-400">Noise-reduced · loudness normalized</p>
                   </div>
                 </div>
                 <a

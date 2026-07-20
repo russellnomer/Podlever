@@ -111,9 +111,9 @@ export const episodes = pgTable("episodes", {
     .defaultNow(),
 
   /**
-   * GCS object key for the Dolby.io-cleaned audio file.
+   * GCS object key for the enhanced audio file.
    * Set by the processing pipeline after audio enhancement.
-   * Null until cleanup completes (or if Dolby is not configured).
+   * Null until enhancement completes (or if no provider ran).
    * Example: "audio/{episodeId}/cleaned.wav"
    */
   cleanedAudioStorageKey: text("cleaned_audio_storage_key"),

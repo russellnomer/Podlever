@@ -5,15 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased] — 2026-07-20
 
+### Removed — Dolby.io audio provider
+- **Dolby removed from provider chain**: Dolby.io confirmed in writing (Jul 19, 2026) that they are no longer onboarding new Media API customers and have stopped new Enterprise contracts. `lib/audio/providers/dolby.ts` deleted. `"dolby"` and `"dolby-enhance"` entries removed from `PRICING_USD` in `lib/cogs.ts`. Historical `episode_cogs` rows with `model = 'dolby-enhance'` are untouched.
+- **New provider chain: Adobe → FFmpeg**. Adobe Podcast Enhance (free beta, activated by `ADOBE_ENHANCE_API_KEY`) runs first; FFmpeg is the always-on fallback at $0 cost.
+- All Dolby references purged from UI copy, comments, and schema docs. User-visible label updated from `"Noise-reduced · normalized · Dolby.io"` to `"Noise-reduced · loudness normalized"`.
+
 ### Changed (audio pipeline — Board moves 1 & 2)
-- **Audio provider abstraction layer** (`lib/audio/`): Replaced the single Dolby-only path with a resilient provider chain. Provider order: Dolby → Adobe → FFmpeg. Any provider failure falls through to the next automatically. FFmpeg is the guaranteed last resort — it runs locally, requires no credentials, and cannot be externally disrupted.
+- **Audio provider abstraction layer** (`lib/audio/`): Replaced the single Dolby-only path with a resilient provider chain. Original chain was Dolby → Adobe → FFmpeg; reduced to Adobe → FFmpeg after Dolby shutdown. Any provider failure falls through to the next automatically. FFmpeg is the guaranteed last resort — it runs locally, requires no credentials, and cannot be externally disrupted.
 - **FFmpeg provider** (`lib/audio/providers/ffmpeg.ts`): Noise reduction (`afftdn=nf=-25`) + EBU R128 loudness normalization (`loudnorm=I=-16:TP=-1.5:LRA=11`), mono output at 44.1 kHz. Runs in 5–30s depending on episode length. Cost: $0. Always available on the Replit container.
-- **Dolby provider** (`lib/audio/providers/dolby.ts`): Refactored from `lib/audio-cleanup.ts`. Input is now a Buffer (direct PUT upload to Dolby's media input endpoint) instead of a pre-signed GCS URL. Same quality, no GCS signed URL dependency.
-- **Adobe Podcast Enhance provider** (`lib/audio/providers/adobe.ts`): New integration. Free during beta. Submit → poll → download pattern. Activated by setting `ADOBE_ENHANCE_API_KEY` in Replit Secrets.
-- **Process route updated**: Removed `getSignedDownloadUrl` dependency (was only used for Dolby). Audio enhancement now calls `enhanceAudio(originalBuffer, mimeType, episodeId)` — cleaner, no signed URL generation.
-- **COGS tracking**: Provider name (`"dolby"`, `"adobe"`, `"ffmpeg"`) now flows through to COGS records. Adobe and FFmpeg record $0 cost. Added provider aliases to `PRICING_USD`.
-- **Asset label**: The `cleaned_audio` asset label now reflects the actual provider used (e.g. `"ffmpeg enhanced audio"`) instead of hardcoding `"Dolby.io enhanced audio"`.
-- **Deleted**: `lib/audio-cleanup.ts` — fully replaced by `lib/audio/providers/dolby.ts`.
+- **Adobe Podcast Enhance provider** (`lib/audio/providers/adobe.ts`): Free during beta. Submit → poll → download pattern. Activated by setting `ADOBE_ENHANCE_API_KEY` in Replit Secrets.
+- **Process route updated**: Audio enhancement calls `enhanceAudio(originalBuffer, mimeType, episodeId)`. COGS keys are now `"adobe"` and `"ffmpeg"` only.
+- **Asset label**: The `cleaned_audio` asset label reflects the actual provider used (e.g. `"ffmpeg enhanced audio"`).
+- **Deleted**: `lib/audio-cleanup.ts` (replaced earlier session) and `lib/audio/providers/dolby.ts`.
 
 ### Not built (by design — Board move 3)
 - No user-facing provider picker UI. Audio enhancement runs silently for every episode.
@@ -47,7 +50,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - New event type: `usage_events.event_type = 'asset_regenerated'`
 
 ### Configuration Required
-- `DOLBY_API_APP_KEY` + `DOLBY_API_APP_SECRET` — Replit Secrets; graceful fallback until set
+- `ADOBE_ENHANCE_API_KEY` — optional; activates Adobe Podcast Enhance. FFmpeg runs if unset.
 - `FOUNDING_MEMBER_DISCORD_URL` — optional; shows placeholder if unset
 
 ---
