@@ -1,0 +1,106 @@
+**Here's a more advanced Demucs setup for Replit** — with **batch processing**, better noise reduction settings, progress tracking, and easy integration into an existing app.
+
+### 1. First, Install Dependencies (Shell tab)
+
+```bash
+pip install demucs torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install soundfile tqdm
+```
+
+### 2. Advanced Script (`advanced_demucs_cleaner.py`)
+
+```python
+import os
+from pathlib import Path
+import torch
+from demucs import pretrained
+import torchaudio
+import soundfile as sf
+from tqdm import tqdm
+import time
+
+# Load a strong model - htdemucs_ft is often best for speech/vocals
+print("Loading Demucs model...")
+model = pretrained.get_model('htdemucs_ft')  # or 'htdemucs' if you want faster
+model.eval()
+
+def clean_audio_file(input_path: str, output_dir: str = "cleaned_audio", 
+                    aggressiveness: float = 1.0):
+    """
+    Clean a single audio file with adjustable strength
+    aggressiveness: 0.5 = gentle, 1.0 = normal, 1.5+ = aggressive
+    """
+    input_path = Path(input_path)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+    
+    output_path = output_dir / f"cleaned_{input_path.name}"
+    
+    try:
+        # Load audio
+        wav, sr = torchaudio.load(str(input_path))
+        
+        # Move to CPU (Replit)
+        wav = wav.to('cpu')
+        
+        print(f"Processing: {input_path.name} | Duration: {wav.shape[1]/sr:.1f}s")
+        
+        # Separate sources
+        with torch.no_grad():
+            sources = model.separate_audio(wav)
+        
+        # Extract vocals (usually the cleanest speech track)
+        vocals = sources[:, 3]  # vocals index in htdemucs
+        
+        # Optional: slight aggressive filtering
+        if aggressiveness > 1.0:
+            vocals = vocals * aggressiveness  # simple boost (can be refined)
+        
+        # Save
+        sf.write(str(output_path), vocals.squeeze().cpu().numpy().T, sr)
+        
+        print(f"✅ Saved: {output_path.name}")
+        return str(output_path)
+        
+    except Exception as e:
+        print(f"❌ Error processing {input_path.name}: {e}")
+        return None
+
+def batch_clean_audio(input_folder: str = "input_audio", 
+                     output_folder: str = "cleaned_audio"):
+    """Process all audio files in a folder"""
+    input_dir = Path(input_folder)
+    input_dir.mkdir(exist_ok=True)
+    
+    audio_files = list(input_dir.glob("*.mp3")) + list(input_dir.glob("*.wav")) + \
+                  list(input_dir.glob("*.m4a")) + list(input_dir.glob("*.ogg"))
+    
+    print(f"Found {len(audio_files)} audio files to clean.\n")
+    
+    for audio_file in tqdm(audio_files, desc="Cleaning audio"):
+        clean_audio_file(str(audio_file), output_folder)
+        time.sleep(0.5)  # Be nice to Replit CPU
+
+# ========================
+# RUN BATCH PROCESSING
+# ========================
+if __name__ == "__main__":
+    batch_clean_audio()
+```
+
+### How to Use
+1. Create two folders in your Replit: `input_audio` and `cleaned_audio`
+2. Upload your noisy files into the `input_audio` folder
+3. Run the script
+
+### Want Even Better Quality?
+- Try model `'htdemucs_ft'` (best) or `'htdemucs_6s'` for more stems.
+- I can add **stem separation** (keep only voice, remove music/background completely) if needed.
+
+Would you like me to add any of these next?
+- Upload via URL support
+- Flask/FastAPI endpoint integration
+- Progress saving / resume
+- Specific tweaks for your use case (e.g., TikTok audio, podcast, etc.)
+
+Just tell me how you want to use it in your app.

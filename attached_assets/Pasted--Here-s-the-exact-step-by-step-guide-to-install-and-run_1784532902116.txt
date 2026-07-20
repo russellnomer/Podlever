@@ -1,0 +1,63 @@
+**Here's the exact step-by-step guide to install and run Demucs on Replit** (updated for 2026):
+
+### Step 1: Create or Open Your Repl
+- Go to [replit.com](https://replit.com) and open/create a **Python** repl.
+
+### Step 2: Install Demucs (in the Shell)
+1. Open the **Shell** tab (bottom panel).
+2. Run these commands **one by one**:
+
+```bash
+pip install demucs
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+
+> **Note**: We use the CPU version because Replit free tier doesn’t have reliable GPU. It still works well for Demucs.
+
+### Step 3: Basic Usage Code
+Create a new file (e.g. `clean_audio.py`) and paste this:
+
+```python
+import os
+from demucs import pretrained
+from demucs.audio import AudioFile
+import torchaudio
+import soundfile as sf
+
+# Load the model (htdemucs is a good all-rounder)
+model = pretrained.get_model('htdemucs')
+
+def enhance_audio(input_path, output_path="cleaned_audio.wav"):
+    # Load audio
+    wav, sr = torchaudio.load(input_path)
+    
+    # Separate sources (vocals, drums, bass, other)
+    sources = model.separate_audio(wav)
+    
+    # Use vocals as the enhanced output (best for speech)
+    vocals = sources[:, 3]  # Index 3 is usually vocals in htdemucs
+    
+    # Save cleaned audio
+    sf.write(output_path, vocals.squeeze().numpy().T, sr)
+    print(f"✅ Cleaned audio saved to: {output_path}")
+
+# Example usage
+if __name__ == "__main__":
+    enhance_audio("input_audio.mp3")   # Change to your file name
+```
+
+### Step 4: Upload Your Audio File
+- Drag your noisy audio file (mp3, wav, etc.) into the Replit file browser.
+- Update the filename in the code.
+
+### Step 5: Run It
+- Click the **Run** button.
+
+---
+
+**Tips for Replit:**
+- First run may take a few minutes (model download).
+- Use the **Always On** feature if available.
+- For longer files, you may need to upgrade Replit plan for more CPU/RAM.
+
+Would you like a **more advanced version** (batch processing, better noise reduction settings, or integration with your existing app code)? Or troubleshooting help if it fails to install?

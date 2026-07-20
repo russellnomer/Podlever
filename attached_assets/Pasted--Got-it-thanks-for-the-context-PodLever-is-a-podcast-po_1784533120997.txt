@@ -1,0 +1,80 @@
+**Got it — thanks for the context.**  
+
+PodLever is a **podcast post-production engine** that turns one raw recording into a full content suite (Cleaned Audio + transcript + clips + show notes + blog post + social assets, etc.).  
+
+The **Cleaned Audio** step is critical: “Noise-reduced, normalized, broadcast-ready. No more echo or background hiss.”
+
+### Updated Recommendation for PodLever
+
+Since Adobe has no public API, **Demucs** is an excellent fit for the audio-cleaning pipeline.
+
+Here’s a **PodLever-optimized version** of the advanced script:
+
+```python
+import os
+from pathlib import Path
+import torch
+from demucs import pretrained
+import torchaudio
+import soundfile as sf
+from tqdm import tqdm
+
+# Load best model for speech/podcast content
+model = pretrained.get_model('htdemucs_ft')  # Strong on voice isolation
+model.eval()
+
+def clean_podcast_audio(input_path: str, output_dir: str = "cleaned"):
+    """
+    Optimized for podcast-style recordings
+    """
+    input_path = Path(input_path)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+    
+    output_path = output_dir / f"cleaned_{input_path.name}"
+    
+    try:
+        print(f"🔊 Cleaning: {input_path.name}")
+        
+        wav, sr = torchaudio.load(str(input_path))
+        wav = wav.to('cpu')
+        
+        with torch.no_grad():
+            sources = model.separate_audio(wav)
+        
+        # Extract vocals (best for spoken word/podcasts)
+        vocals = sources[:, 3]   # vocals stem
+        
+        # Normalize to broadcast levels (-16 LUFS target is common for podcasts)
+        vocals = torchaudio.functional.gain(vocals, gain_db=0)  # placeholder - can refine
+        
+        sf.write(str(output_path), vocals.squeeze().cpu().numpy().T, sr)
+        
+        print(f"✅ Saved cleaned file → {output_path.name}\n")
+        return str(output_path)
+        
+    except Exception as e:
+        print(f"❌ Failed {input_path.name}: {e}")
+        return None
+
+# Batch process everything in /input
+def process_all_podcasts():
+    input_dir = Path("input_podcasts")
+    input_dir.mkdir(exist_ok=True)
+    
+    files = [f for f in input_dir.glob("*") if f.suffix.lower() in {'.mp3','.wav','.m4a','.mp4'}]
+    
+    for file in tqdm(files, desc="PodLever Audio Cleaning"):
+        clean_podcast_audio(str(file))
+
+if __name__ == "__main__":
+    process_all_podcasts()
+```
+
+Would you like me to:
+- Add **loudness normalization** to true podcast standards (-16 LUFS)?
+- Add **stem export** (separate music/background if needed)?
+- Turn this into a **simple web endpoint** (Flask/FastAPI) so PodLever can call it?
+- Or help integrate it directly into your existing PodLever backend?
+
+Let me know the current tech stack on the backend and I’ll tailor it perfectly.
