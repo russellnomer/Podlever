@@ -22,7 +22,7 @@
 
 "use server";
 
-import { requireOwner }            from "@/providers/owner-guard";
+import { requireBetaUser }         from "@/providers/owner-guard";
 import { episodeRepository, assetRepository, usageRepository } from "@/repositories";
 import { openai, MODELS }          from "@/lib/openai";
 import { recordCogs, estimateTokenCost } from "@/lib/cogs";
@@ -110,7 +110,7 @@ export async function regenerateAsset(
   styleHint?: string,
 ): Promise<RegenerateResult> {
   // ── Auth ───────────────────────────────────────────────────────────────────
-  const { userId, plan } = await requireOwner();
+  const { userId, plan } = await requireBetaUser();
 
   // ── Plan gate ──────────────────────────────────────────────────────────────
   const limit = REGEN_LIMITS[plan ?? "free"] ?? 0;

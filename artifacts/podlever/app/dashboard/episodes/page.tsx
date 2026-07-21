@@ -11,11 +11,11 @@
  * newest first. Shows status badges and links to episode detail pages.
  */
 
-import { redirect }                from "next/navigation";
-import Link                        from "next/link";
-import { getAuthUser }             from "@/providers/auth";
-import { requireOwnerFromSession } from "@/providers/owner-guard";
-import { episodeRepository }       from "@/repositories";
+import { redirect }              from "next/navigation";
+import Link                      from "next/link";
+import { getAuthUser }           from "@/providers/auth";
+import { requireBetaAccess }     from "@/providers/owner-guard";
+import { episodeRepository }     from "@/repositories";
 import { Plus, Mic, Clock, CheckCircle2, Radio, Archive } from "lucide-react";
 import type { Episode } from "@/db/schema";
 
@@ -72,12 +72,14 @@ function EpisodeCard({ episode }: { episode: Episode }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function EpisodesPage() {
-  // Auth guard
+  // Auth guard — allows owners AND active beta users
   const session = await getAuthUser();
   let ownerId: string;
+  let isOwner = false;
   try {
-    const identity = await requireOwnerFromSession(session);
-    ownerId = identity.userId;
+    const identity = await requireBetaAccess(session);
+    ownerId  = identity.userId;
+    isOwner  = identity.isOwner;
   } catch {
     redirect("/auth/login");
   }
@@ -100,12 +102,15 @@ export default async function EpisodesPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard"
-              className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
-            >
-              CRM
-            </Link>
+            {/* CRM link visible to owner only — beta users have no CRM access */}
+            {isOwner && (
+              <Link
+                href="/dashboard"
+                className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
+              >
+                CRM
+              </Link>
+            )}
             <Link
               href="/dashboard/episodes/new"
               className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"

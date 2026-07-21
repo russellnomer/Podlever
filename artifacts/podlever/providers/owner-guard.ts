@@ -188,3 +188,101 @@ export async function getOwnerOrNull(): Promise<OwnerIdentity | null> {
     return null;
   }
 }
+
+// ─── Beta access guard ─────────────────────────────────────────────────────────
+
+/**
+ * UserIdentity — caller identity returned by requireBetaAccess().
+ *
+ * Extends OwnerIdentity with an isOwner flag so callers can branch on role
+ * (e.g. to show/hide admin-only UI or to scope repository calls).
+ *
+ * All other fields are identical to OwnerIdentity — services can accept
+ * UserIdentity wherever they previously accepted OwnerIdentity.
+ */
+export type UserIdentity = OwnerIdentity & {
+  /** true when the caller has role === "owner"; false for active beta users. */
+  isOwner: boolean;
+};
+
+/**
+ * requireBetaAccess — Assert that the given session may access the episode
+ * pipeline: either an owner OR a user with betaAccess === "active".
+ *
+ * Applies the same three gates as requireOwnerFromSession:
+ *   Gate 1: user must be authenticated (session cookie present and valid)
+ *   Gate 2: user.role === "owner" OR user.betaAccess === "active"
+ *   Gate 3: session version matches DB (rejects revoked/stolen sessions)
+ *
+ * Used by episode pages, actions, and route handlers so that active beta
+ * testers can use the product while CRM and admin routes stay owner-only.
+ *
+ * Each user's episodes are always scoped to their own userId, so owners
+ * and beta users never see each other's data.
+ *
+ * @param user  Pre-resolved session (from getAuthUser()) or null
+ * @returns UserIdentity — the caller's DB ID, display name, plan, and role flag
+ * @throws UnauthorizedError — no session, or session version revoked
+ * @throws ForbiddenError   — logged in but neither owner nor active beta user
+ */
+export async function requireBetaAccess(
+  user: PodLeverSession | null,
+): Promise<UserIdentity> {
+  // Gate 1 — must be authenticated
+  if (!user) {
+    throw new UnauthorizedError();
+  }
+
+  // Gate 2 — must be owner OR active beta user
+  const isOwner = user.role === "owner";
+  if (!isOwner && user.betaAccess !== "active") {
+    throw new ForbiddenError(user.role ?? "user");
+  }
+
+  // Gate 3 — session version must match the DB (catches stolen/revoked sessions)
+  //
+  // Same one-row SELECT used by requireOwnerFromSession. Acceptable cost for
+  // every privileged request.
+  const [dbUser] = await db
+    .select({ sessionVersion: users.sessionVersion, plan: users.plan })
+    .from(users)
+    .where(eq(users.id, user.userId))
+    .limit(1);
+
+  if (!dbUser || dbUser.sessionVersion !== user.sessionVersion) {
+    console.log(JSON.stringify({
+      event:         "auth.session_version_mismatch",
+      userId:        user.userId,
+      cookieVersion: user.sessionVersion,
+      dbVersion:     dbUser?.sessionVersion ?? null,
+      timestamp:     new Date().toISOString(),
+    }));
+    throw new UnauthorizedError();
+  }
+
+  return {
+    userId:       user.userId,
+    replitUserId: user.replitUserId,
+    displayName:  user.displayName,
+    plan:         dbUser.plan,
+    isOwner,
+  };
+}
+
+/**
+ * requireBetaUser — Cookie-reading variant of requireBetaAccess.
+ *
+ * Reads the session from Next.js cookies() then calls requireBetaAccess.
+ * Use in Server Actions and Route Handlers where the session is not
+ * already resolved (i.e. wherever requireOwner() was previously called
+ * for episode operations).
+ *
+ * Do NOT use for CRM, admin, or export routes — those remain owner-only.
+ *
+ * @returns UserIdentity — authenticated user's identity
+ * @throws UnauthorizedError, ForbiddenError
+ */
+export async function requireBetaUser(): Promise<UserIdentity> {
+  const user = await getAuthUser();
+  return requireBetaAccess(user);
+}

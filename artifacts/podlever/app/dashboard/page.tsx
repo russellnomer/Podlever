@@ -113,7 +113,9 @@ export default async function DashboardPage({
   }
 
   if (user.role !== "owner") {
-    redirect("/");
+    // Non-owner active beta users access their own episode list, not the owner CRM.
+    // The middleware has already verified betaAccess === "active" before this point.
+    redirect("/dashboard/episodes");
   }
 
   // ── Parse search params ────────────────────────────────────────────────────

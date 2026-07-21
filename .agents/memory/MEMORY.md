@@ -7,3 +7,4 @@
 - [PodLever analytics](podlever-analytics.md) — analytics_events table, trackServerEvent fire-and-forget, UTM cookie capture in middleware, admin funnel at /admin/analytics.
 - [PodLever Stripe integration](podlever-stripe.md) — credential resolution, esbuild __dirname migration gotcha, startup sequence, webhook handling, plan mapping.
 - [PodLever Week-1 features](podlever-week1-features.md) — job queue, audio cleanup, COGS, PDF, ZIP, share links, regeneration, Founding Member; schema changes in migration 0008.
+- [PodLever beta access guard](podlever-beta-guard.md) — requireBetaAccess/requireBetaUser for episode routes; CRM/admin stays owner-only; AUTH_PATHS trailing-slash outage lesson.

@@ -18,8 +18,8 @@
 
 import { redirect, notFound }      from "next/navigation";
 import Link                        from "next/link";
-import { getAuthUser }             from "@/providers/auth";
-import { requireOwnerFromSession } from "@/providers/owner-guard";
+import { getAuthUser }         from "@/providers/auth";
+import { requireBetaAccess }   from "@/providers/owner-guard";
 import { episodeRepository, assetRepository } from "@/repositories";
 import { getSignedDownloadUrl }    from "@/lib/storage";
 import { StatusPoller }            from "../components/StatusPoller";
@@ -97,13 +97,13 @@ export default async function EpisodeDetailPage({
 }) {
   const { id: episodeId } = await params;
 
-  // Auth guard
+  // Auth guard — allows owners AND active beta users; episodes are scoped to userId
   const session = await getAuthUser();
   let ownerId: string;
   let plan: string | null = null;
   try {
-    const identity = await requireOwnerFromSession(session);
-    ownerId = identity.userId;
+    const identity = await requireBetaAccess(session);
+    ownerId = identity.userId;  // used to scope the episode query to this user only
     plan    = identity.plan ?? null;
   } catch {
     redirect("/auth/login");

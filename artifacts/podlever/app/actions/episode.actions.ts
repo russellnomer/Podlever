@@ -33,7 +33,7 @@
 import { z }              from "zod";
 import { redirect }       from "next/navigation";
 import { after }          from "next/server";
-import { requireOwner }   from "@/providers/owner-guard";
+import { requireBetaUser } from "@/providers/owner-guard";
 import { episodeService } from "@/services";
 import { episodeRepository, assetRepository } from "@/repositories";
 import { uploadAudioBuffer } from "@/lib/storage";
@@ -56,7 +56,7 @@ const EpisodeIdSchema = z.string().uuid("episodeId must be a valid UUID");
 export async function createEpisodeAction(
   input: unknown,
 ): Promise<Episode> {
-  const { userId } = await requireOwner();
+  const { userId } = await requireBetaUser();
   return episodeService.createEpisode(input, userId);
 }
 
@@ -67,7 +67,7 @@ export async function createEpisodeAction(
  * @throws UnauthorizedError, ForbiddenError
  */
 export async function listEpisodesAction(): Promise<Episode[]> {
-  const { userId } = await requireOwner();
+  const { userId } = await requireBetaUser();
   return episodeService.listEpisodes(userId);
 }
 
@@ -79,7 +79,7 @@ export async function listEpisodesAction(): Promise<Episode[]> {
  * @throws UnauthorizedError, ForbiddenError, EpisodeNotFoundError
  */
 export async function getEpisodeAction(episodeId: string): Promise<Episode> {
-  const { userId } = await requireOwner();
+  const { userId } = await requireBetaUser();
   // Validate UUID format before passing to the DB layer — prevents malformed UUIDs
   // from reaching PostgreSQL and leaking DB error details to the caller.
   const validatedId = EpisodeIdSchema.parse(episodeId);
@@ -96,7 +96,7 @@ export async function getEpisodeAction(episodeId: string): Promise<Episode> {
 export async function transitionEpisodeAction(
   input: unknown,
 ): Promise<TransitionResult> {
-  const { userId } = await requireOwner();
+  const { userId } = await requireBetaUser();
   return episodeService.transitionEpisode(input, userId);
 }
 
@@ -132,7 +132,7 @@ const ALLOWED_AUDIO_TYPES = new Set([
  * Returns: never (redirect throws) — errors surface as thrown Error instances.
  */
 export async function uploadEpisodeAction(formData: FormData): Promise<never> {
-  const { userId } = await requireOwner();
+  const { userId } = await requireBetaUser();
 
   // ── Validate title ──────────────────────────────────────────────────────────
   const title = z

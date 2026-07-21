@@ -20,7 +20,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { cookies }                         from "next/headers";
 import { getIronSession }                  from "iron-session";
 import { getSessionOptions }               from "@/providers/auth";
-import { requireOwnerFromSession }         from "@/providers/owner-guard";
+import { requireBetaAccess }               from "@/providers/owner-guard";
 import { episodeRepository }               from "@/repositories";
 import { db }                              from "@/db";
 import { episodes }                        from "@/db/schema";
@@ -30,7 +30,7 @@ import { z }                               from "zod";
 import type { PodLeverSession }            from "@/providers/auth";
 
 async function getOwner(session: PodLeverSession): Promise<string> {
-  const identity = await requireOwnerFromSession(session);
+  const identity = await requireBetaAccess(session);
   return identity.userId;
 }
 

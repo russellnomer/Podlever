@@ -12,10 +12,10 @@
  * FSM transition, and processing trigger before redirecting to the detail page.
  */
 
-import { redirect }                from "next/navigation";
-import Link                        from "next/link";
-import { getAuthUser }             from "@/providers/auth";
-import { requireOwnerFromSession } from "@/providers/owner-guard";
+import { redirect }            from "next/navigation";
+import Link                    from "next/link";
+import { getAuthUser }         from "@/providers/auth";
+import { requireBetaAccess }   from "@/providers/owner-guard";
 import { usageRepository }         from "@/repositories";
 import { trackServerEvent }        from "@/lib/analytics";
 import { EpisodeUploadForm }       from "../components/EpisodeUploadForm";
@@ -26,7 +26,8 @@ export default async function NewEpisodePage() {
   const session = await getAuthUser();
   let userId: string | undefined;
   try {
-    const identity = await requireOwnerFromSession(session);
+    // Allow owners and active beta users — episode creation is open to beta testers
+    const identity = await requireBetaAccess(session);
     userId = identity.userId;
   } catch {
     redirect("/auth/login");

@@ -1,5 +1,34 @@
 # PodLever Changelog
 
+## 2026-07-21 — Beta access & in-app feedback
+
+### Security / Architecture
+- **`requireBetaAccess(session)` guard** — new function in `providers/owner-guard.ts` that grants access to owners OR users with `betaAccess === "active"`. Applies same three gates as `requireOwnerFromSession` (authenticated → role/betaAccess check → session version DB match). Returns `UserIdentity` which extends `OwnerIdentity` with an `isOwner: boolean` field.
+- **`requireBetaUser()`** — cookie-reading variant of `requireBetaAccess` for use in Server Actions and Route Handlers.
+
+### Changed — Episode routes unblocked for beta users
+All episode-related pages, actions, and API routes now use `requireBetaAccess` / `requireBetaUser` instead of `requireOwnerFromSession` / `requireOwner`. CRM, admin, billing, and export routes remain owner-only.
+
+Affected files:
+- `app/dashboard/episodes/page.tsx` — beta users can list their episodes; CRM nav link hidden for non-owners
+- `app/dashboard/episodes/new/page.tsx` — beta users can upload episodes
+- `app/dashboard/episodes/[id]/page.tsx` — beta users can view their episode results
+- `app/actions/episode.actions.ts` — all 5 actions (create, list, get, transition, upload) open to beta users
+- `app/actions/regenerate.actions.ts` — regenerate action open to beta users (plan limits still enforced)
+- `app/api/episodes/[id]/zip/route.ts` — ZIP download open to beta users
+- `app/api/episodes/[id]/share-token/route.ts` — share token generation open to beta users
+- `app/api/episodes/[id]/guest-pack/route.ts` — guest pack PDF open to beta users
+
+### Changed — Dashboard routing for beta users
+- `app/dashboard/page.tsx` — non-owner users (active beta) now redirect to `/dashboard/episodes` instead of `/`. Owner CRM is unchanged.
+
+### Added — In-app feedback widget
+- **`db/schema/feedback.ts`** — new `feedback` table (id, user_id, display_name, page_url, message, created_at). Append-only; no FK so rows survive user deletion.
+- **Migration `0008_loose_sage.sql`** — creates `feedback` table; applied.
+- **`app/actions/feedback.actions.ts`** — `submitFeedbackAction` server action: validates input (Zod), inserts into `feedback` table, emits structured `feedback.submitted` production log.
+- **`app/dashboard/components/FeedbackWidget.tsx`** — floating "Feedback" button (bottom-right, all dashboard pages). Opens a modal with a free-text field; page URL captured automatically; shows success state for 2.2 s then auto-closes.
+- **`app/dashboard/layout.tsx`** — new dashboard shell layout that mounts `FeedbackWidget` on every `/dashboard/*` route.
+
 ## 2026-07-19 — Task #14: Stripe Subscriptions
 
 ### Added

@@ -22,7 +22,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { cookies }                         from "next/headers";
 import { getIronSession }                  from "iron-session";
 import { getSessionOptions }               from "@/providers/auth";
-import { requireOwnerFromSession }         from "@/providers/owner-guard";
+import { requireBetaAccess }               from "@/providers/owner-guard";
 import { episodeRepository, assetRepository } from "@/repositories";
 import { buildEpisodeZip }                 from "@/lib/zip-export";
 import { z }                               from "zod";
@@ -37,7 +37,7 @@ export async function GET(
   const session     = await getIronSession<PodLeverSession>(cookieStore, getSessionOptions());
   let ownerId: string;
   try {
-    const identity = await requireOwnerFromSession(session);
+    const identity = await requireBetaAccess(session);
     ownerId = identity.userId;
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

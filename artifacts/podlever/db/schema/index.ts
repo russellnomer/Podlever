@@ -52,3 +52,6 @@ export * from "./job-queue";
 
 // Per-call AI cost tracking / COGS (depends on users + episodes)
 export * from "./episode-cogs";
+
+// In-app feedback submissions (append-only; no FK dependencies)
+export * from "./feedback";
