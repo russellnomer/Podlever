@@ -60,6 +60,7 @@ export function FeedbackWidget() {
       const t = setTimeout(() => textareaRef.current?.focus(), 60);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [open]);
 
   // ── Submit handler ─────────────────────────────────────────────────────────
