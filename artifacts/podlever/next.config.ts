@@ -20,6 +20,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow Next.js dev server to serve /_next/* resources to the Replit proxy domain.
+  // Without this, the dev server emits a cross-origin warning and future Next.js versions
+  // will block these requests entirely. The Replit proxy relays from the public dev domain
+  // to the local dev server, so its hostname must be explicitly trusted.
+  allowedDevOrigins: [
+    // Replit dev domain auto-injected by Replit into the container.
+    // Format: <repl-id>-00-<slug>.<cluster>.replit.dev
+    ...(process.env.REPLIT_DEV_DOMAIN ? [process.env.REPLIT_DEV_DOMAIN] : []),
+    // Wildcard fallback for any Replit dev subdomain (covers both dev and preview domains).
+    "*.replit.dev",
+    "*.repl.co",
+  ],
+
   experimental: {
     // Allow Server Actions to receive audio file uploads up to 50MB.
     // Podcast episodes for beta are capped at 25MB (OpenAI Whisper limit)

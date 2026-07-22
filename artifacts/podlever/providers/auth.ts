@@ -285,13 +285,27 @@ export function getCallbackUrl(request?: Request): string {
   //      x-forwarded-host  — the public hostname (e.g. abc.replit.dev or custom domain)
   //      x-forwarded-proto — the public protocol (always "https" in Replit)
   //    This works in both the dev preview and Autoscale deployments without any env vars.
+  //
+  //    IMPORTANT: When the Replit workspace preview iframe connects to the dev server
+  //    directly (internal routing), x-forwarded-host may be set to a local/internal
+  //    address (e.g. "0.0.0.0:3000", "localhost:3000", "127.0.0.1:3000"). Using
+  //    these as the redirect_uri would produce an unreachable OAuth callback URL.
+  //    We validate the host is a real public hostname before trusting it.
   if (request) {
     const host  = request.headers.get("x-forwarded-host");
     const proto = request.headers.get("x-forwarded-proto") ?? "https";
     if (host) {
       // x-forwarded-host may contain multiple values (comma-separated); take the first.
       const primaryHost = host.split(",")[0]!.trim();
-      return `${proto}://${primaryHost}/auth/callback`;
+      // Reject internal/local addresses — fall through to REPLIT_DEV_DOMAIN instead.
+      const isLocalAddress =
+        primaryHost.startsWith("0.0.0.0") ||
+        primaryHost.startsWith("localhost") ||
+        primaryHost.startsWith("127.0.0.1") ||
+        primaryHost.startsWith("::1");
+      if (!isLocalAddress) {
+        return `${proto}://${primaryHost}/auth/callback`;
+      }
     }
   }
 
