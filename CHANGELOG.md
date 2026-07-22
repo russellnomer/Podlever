@@ -1,5 +1,21 @@
 # PodLever Changelog
 
+## 2026-07-22 — Build hardening & auth login fix
+
+### Fixed — TypeScript build error (deployment blocker)
+- `app/dashboard/components/FeedbackWidget.tsx` — `useEffect` callback missing `return undefined` on the `!open` branch. TypeScript strict mode requires consistent return types when one branch returns a cleanup function. Added explicit `return undefined`.
+
+### Fixed — OAuth callback redirecting to 0.0.0.0:3000
+- `providers/auth.ts` — `getCallbackUrl()` now rejects local/internal `x-forwarded-host` values (`0.0.0.0`, `localhost`, `127.0.0.1`, `::1`) and falls through to `REPLIT_DEV_DOMAIN`. Previously, when the Replit workspace preview iframe set `x-forwarded-host: 0.0.0.0:3000`, the OAuth `redirect_uri` was built as `http://0.0.0.0:3000/auth/callback` — an address the user's browser cannot reach.
+- `next.config.ts` — Added `allowedDevOrigins: ["*.replit.dev", "*.repl.co"]` to suppress the Next.js cross-origin dev warning and properly trust the Replit proxy.
+
+### Fixed — Production database migrations never ran automatically
+- **Root cause:** The production build command was `next build` only. No migrations ran. Production DB was missing `job_queue`, `episode_cogs`, and `feedback` tables — users uploading episodes or submitting feedback would hit DB errors immediately after login.
+- `scripts/migrate-prod.mjs` — New Node.js migration bootstrap script. On each deploy: (1) creates the `drizzle.__drizzle_migrations` tracking table if absent, (2) pre-seeds hashes for migrations 0000–0007 that were applied before Drizzle tracking existed, (3) runs `drizzle-kit migrate` to apply any pending migrations. Idempotent — safe to run multiple times.
+- `package.json` — Added `build:prod` script: `node scripts/migrate-prod.mjs && next build`.
+- `artifact.toml` — Production build command updated from `build` → `build:prod`. Every publish now migrates before compiling.
+- `db/migrations/0008_job_queue_cogs_share.sql` — Deleted. This was an orphaned file superseded by `0008_loose_sage.sql` (which the Drizzle journal tracks). Having two `0008_` files could cause Drizzle Kit confusion.
+
 ## 2026-07-21 — Beta access & in-app feedback
 
 ### Security / Architecture

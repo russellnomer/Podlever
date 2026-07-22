@@ -15,7 +15,7 @@ run = "pnpm --filter @workspace/podlever run dev"
 [services.production]
 
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/podlever", "run", "build"]
+args = ["pnpm", "--filter", "@workspace/podlever", "run", "build:prod"]
 
 [services.production.build.env]
 NODE_ENV = "production"

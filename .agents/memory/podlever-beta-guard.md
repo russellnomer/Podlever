@@ -1,6 +1,6 @@
 ---
 name: PodLever beta access guard
-description: requireBetaAccess/requireBetaUser pattern for episode routes; AUTH_PATHS trailing-slash outage root cause; feedback table.
+description: requireBetaAccess/requireBetaUser pattern for episode routes; AUTH_PATHS trailing-slash outage root cause; feedback table; OAuth 0.0.0.0 fix; production migration automation.
 ---
 
 # PodLever Beta Access Guard
@@ -37,7 +37,26 @@ All episode repository calls use `userId` as the scope key. `listEpisodesForOwne
 
 **Why this matters:** Any future path added to `AUTH_PATHS` must not have a trailing slash.
 
+## OAuth callback redirecting to 0.0.0.0:3000
+**Root cause:** When Replit workspace preview iframe connects to the Next.js dev server, `x-forwarded-host` is set to `0.0.0.0:3000` (the internal binding address). `getCallbackUrl()` trusted it blindly, building `redirect_uri = http://0.0.0.0:3000/auth/callback`. After OAuth, Replit redirects the user's browser there — an unreachable address.
+
+**Fix:** `getCallbackUrl()` now rejects `x-forwarded-host` values starting with `0.0.0.0`, `localhost`, `127.0.0.1`, or `::1` and falls through to `REPLIT_DEV_DOMAIN`. Also added `allowedDevOrigins: ["*.replit.dev", "*.repl.co"]` in `next.config.ts`.
+
+**Why this matters:** Always validate proxy headers before using them to construct public-facing URLs.
+
 ## Feedback table
 `db/schema/feedback.ts` — columns: id (uuid), user_id (text, not FK), display_name, page_url, message, created_at. Migration `0008_loose_sage.sql` applied. Server action: `app/actions/feedback.actions.ts`. Widget: `app/dashboard/components/FeedbackWidget.tsx`. Layout: `app/dashboard/layout.tsx`.
 
-Feedback is stored in DB + emits structured `feedback.submitted` log. No email dependency in Phase 1 alpha.
+## Production migration automation
+**Problem:** Production DB was missing tables from migrations applied after initial setup. No migrations ran automatically on deploy.
+
+**Fix:** `scripts/migrate-prod.mjs` — bootstrap script that:
+1. Creates `drizzle.__drizzle_migrations` tracking table if missing
+2. Pre-seeds hashes for migrations 0000–0007 (applied before tracking existed; hashes match dev tracking)
+3. Runs `drizzle-kit migrate` to apply pending migrations
+
+`package.json` `build:prod` = `node scripts/migrate-prod.mjs && next build`. `artifact.toml` production build uses `build:prod`.
+
+**Why this matters:** Every future schema change (new migration) will be applied automatically on the next publish. No manual `db:migrate` needed after deploy.
+
+**Migration tracking state:** Dev DB has 8 rows (id 1–8). Migration 0002 was applied via `db:push` and is NOT in the tracking table — this is intentional. Pre-seeded hashes cover 0000, 0001, 0003–0007. Future migrations will be tracked normally.
