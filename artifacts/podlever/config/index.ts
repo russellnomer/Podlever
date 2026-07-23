@@ -94,6 +94,29 @@ const EnvSchema = z.object({
    * Not used in auth logic; available for dev tooling.
    */
   REPLIT_USER: z.string().optional(),
+
+  /**
+   * Replit deployment domains — comma-separated list of public hostnames injected
+   * by Replit Autoscale at runtime. Runtime-managed; do not set manually.
+   * Used by getCallbackUrl() as a production fallback when OIDC_CALLBACK_URL is absent.
+   */
+  REPLIT_DOMAINS: z.string().optional(),
+
+  /**
+   * Explicit OIDC callback URL override.
+   * REQUIRED in production: set to https://podlever.com/auth/callback in Replit Secrets
+   * (production environment scope). Without this, production login will fail when a
+   * custom domain is active because REPLIT_DOMAINS points to the replit.app subdomain,
+   * not the custom domain registered with Replit's OIDC provider.
+   *
+   * In development: omit this; REPLIT_DEV_DOMAIN is used automatically.
+   * In tests: may be set to a local URL for integration test coverage.
+   */
+  OIDC_CALLBACK_URL: z
+    .string()
+    .url("OIDC_CALLBACK_URL must be a valid HTTPS URL")
+    .startsWith("https://", "OIDC_CALLBACK_URL must use HTTPS")
+    .optional(),
 });
 
 // ─── Parse and export ──────────────────────────────────────────────────────────

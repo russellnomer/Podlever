@@ -254,88 +254,103 @@ export function getOwnerReplitUserId(): string {
 /**
  * getCallbackUrl — Build the OIDC callback URL for this environment.
  *
- * Resolution priority (first non-empty value wins):
- *   1. OIDC_CALLBACK_URL   — explicit override; MUST be set in Replit Secrets for
- *                             production (e.g. https://podlever.com/auth/callback).
- *   2. REPLIT_DEV_DOMAIN   — auto-injected by Replit in the dev workspace. Checked
- *                             before request headers because Replit injects it reliably
- *                             whereas x-forwarded-host can be a container-internal IP
- *                             when requests arrive via the iOS Replit app or other
- *                             non-proxy paths. Private IPs pass the local-address guard
- *                             but are not routable from an external browser, causing
- *                             Safari's "Not allowed to use restricted network port" error.
- *   3. Request x-forwarded-host — derived from the reverse-proxy headers; used for
- *                             non-Replit environments where REPLIT_DEV_DOMAIN is absent.
- *   4. REPLIT_DOMAINS      — comma-separated list injected in Replit Autoscale (last resort
- *                             if OIDC_CALLBACK_URL was not set and no request is available).
+ * The function uses two entirely separate resolution paths based on NODE_ENV to
+ * prevent dev-workspace variables (REPLIT_DEV_DOMAIN) from ever leaking into the
+ * production OAuth flow — which would break login for all users on podlever.com.
+ *
+ * ── PRODUCTION (NODE_ENV === "production") ──────────────────────────────────
+ *   1. OIDC_CALLBACK_URL  — REQUIRED. Set in Replit Secrets scoped to production:
+ *                            https://podlever.com/auth/callback
+ *                            A startup warning (instrumentation.ts) fires if absent.
+ *   2. REPLIT_DOMAINS     — Emergency fallback only. Runtime-injected by Replit
+ *                            Autoscale; points to the correct production domain but
+ *                            does NOT guarantee a match with the registered redirect_uri
+ *                            if a custom domain is in use. Always prefer OIDC_CALLBACK_URL.
+ *   NEVER checked: REPLIT_DEV_DOMAIN (dev workspace domain, wrong domain for prod).
+ *   NEVER checked: x-forwarded-host (request headers cannot be trusted for OAuth config).
+ *
+ * ── DEVELOPMENT / TEST ──────────────────────────────────────────────────────
+ *   1. OIDC_CALLBACK_URL  — Optional explicit override for integration testing.
+ *   2. REPLIT_DEV_DOMAIN  — Auto-injected by Replit; always the correct public URL.
+ *                            Checked BEFORE x-forwarded-host because the iOS Replit app
+ *                            routes requests through an internal proxy that sets
+ *                            x-forwarded-host to a container-private IP (172.24.x.x,
+ *                            10.x.x.x). These IPs pass a simple loopback check but are
+ *                            unreachable from external browsers → Safari "restricted
+ *                            network port" error after OAuth Allow.
+ *   3. x-forwarded-host   — Derived from reverse-proxy headers. All RFC-1918 ranges
+ *                            and loopback addresses are rejected (see isUnroutableAddress).
+ *   4. REPLIT_DOMAINS     — Last resort (autoscale env used in testing without OIDC_CALLBACK_URL).
  *
  * The callback route is always /auth/callback (not /api/ — avoids proxy routing conflict).
  *
- * Deployment checklist: set OIDC_CALLBACK_URL in Replit Secrets to the production URL
- * (e.g. https://podlever.com/auth/callback) before deploying to Autoscale.
- *
- * @param request  Optional incoming Request — used only as a fallback (priority 3) to
- *                 derive the host from x-forwarded-host when no Replit env vars are set.
+ * @param request  Optional incoming Request — used only in the dev path (priority 3) to
+ *                 derive the host from x-forwarded-host when REPLIT_DEV_DOMAIN is absent.
  * @returns Full HTTPS URL for the OIDC callback
- * @throws  If no domain source is available (prevents silent misconfiguration)
+ * @throws  If no valid domain source is available (prevents silent misconfiguration)
  */
 export function getCallbackUrl(request?: Request): string {
-  // 1. Explicit override — set this in Replit Secrets for production deployments.
-  //    Required for Autoscale where the production domain differs from REPLIT_DEV_DOMAIN.
+  const isProd = process.env.NODE_ENV === "production";
+
+  // ── Production resolution path ─────────────────────────────────────────────
+  if (isProd) {
+    // 1. Explicit production URL — required; set via Replit Secrets (production scope).
+    //    Value: https://podlever.com/auth/callback
+    //    A startup warning in instrumentation.ts fires when this is missing.
+    if (process.env.OIDC_CALLBACK_URL) {
+      return process.env.OIDC_CALLBACK_URL;
+    }
+
+    // 2. Emergency fallback: Replit Autoscale injects REPLIT_DOMAINS at runtime.
+    //    Use only when OIDC_CALLBACK_URL was not set (misconfiguration).
+    //    Warning: if a custom domain (podlever.com) differs from REPLIT_DOMAINS,
+    //    Replit's OIDC will reject the token exchange with invalid_grant.
+    if (process.env.REPLIT_DOMAINS) {
+      const firstDomain = process.env.REPLIT_DOMAINS.split(",")[0]!.trim();
+      console.error(
+        "[auth] PRODUCTION MISCONFIGURATION: OIDC_CALLBACK_URL is not set. " +
+          "Falling back to REPLIT_DOMAINS — login will fail if a custom domain is active. " +
+          "Set OIDC_CALLBACK_URL=https://podlever.com/auth/callback in Replit Secrets (production).",
+      );
+      return `https://${firstDomain}/auth/callback`;
+    }
+
+    throw new Error(
+      "Production misconfiguration: OIDC_CALLBACK_URL is not set and REPLIT_DOMAINS " +
+        "is unavailable. Add OIDC_CALLBACK_URL=https://podlever.com/auth/callback " +
+        "to Replit Secrets (production environment) before deploying.",
+    );
+  }
+
+  // ── Development / test resolution path ────────────────────────────────────
+  // 1. Explicit override — useful for integration tests targeting a specific URL.
   if (process.env.OIDC_CALLBACK_URL) {
     return process.env.OIDC_CALLBACK_URL;
   }
 
-  // 2. Replit dev workspace domain — always use this when available.
-  //
-  //    IMPORTANT: This is checked BEFORE x-forwarded-host headers because the iOS
-  //    Replit app and other non-proxy code paths can set x-forwarded-host to a
-  //    container-internal IP (e.g. 172.24.0.2, 10.x.x.x) that looks like a public
-  //    address but is not reachable from an external browser.  Using such an IP as
-  //    the OAuth redirect_uri causes Safari to throw "Not allowed to use restricted
-  //    network port" after the user clicks Allow.
-  //
-  //    REPLIT_DEV_DOMAIN is the canonical public hostname injected by Replit and is
-  //    always correct for the dev workspace regardless of request routing path.
+  // 2. Replit dev workspace domain — always reliable in dev regardless of how
+  //    the request reached the server (desktop proxy, iOS Replit app, etc.).
+  //    Checked BEFORE x-forwarded-host to avoid container-IP leakage (see jsdoc).
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}/auth/callback`;
   }
 
-  // 3. Derive from the incoming request's reverse-proxy headers.
-  //    Used for non-Replit environments where REPLIT_DEV_DOMAIN is not set.
-  //    Replit's proxy forwards:
-  //      x-forwarded-host  — the public hostname
-  //      x-forwarded-proto — the public protocol (always "https" in Replit)
+  // 3. Request-derived host — non-Replit environments where REPLIT_DEV_DOMAIN is absent.
+  //    All RFC-1918 and loopback ranges are rejected: none are reachable from an
+  //    external browser and would produce a permanently broken OAuth redirect_uri.
   if (request) {
     const host  = request.headers.get("x-forwarded-host");
     const proto = request.headers.get("x-forwarded-proto") ?? "https";
     if (host) {
-      // x-forwarded-host may contain multiple comma-separated values; take the first.
+      // x-forwarded-host may be a comma-separated list; take the first value.
       const primaryHost = host.split(",")[0]!.trim();
-      // Reject all private/local/container addresses — none of these are reachable
-      // from an external browser and would produce a broken OAuth redirect_uri.
       const isUnroutableAddress =
-        primaryHost.startsWith("0.0.0.0")     ||
-        primaryHost.startsWith("localhost")    ||
-        primaryHost.startsWith("127.")         ||
-        primaryHost.startsWith("::1")          ||
-        primaryHost.startsWith("10.")          ||
-        primaryHost.startsWith("172.16.")      ||
-        primaryHost.startsWith("172.17.")      ||
-        primaryHost.startsWith("172.18.")      ||
-        primaryHost.startsWith("172.19.")      ||
-        primaryHost.startsWith("172.20.")      ||
-        primaryHost.startsWith("172.21.")      ||
-        primaryHost.startsWith("172.22.")      ||
-        primaryHost.startsWith("172.23.")      ||
-        primaryHost.startsWith("172.24.")      ||
-        primaryHost.startsWith("172.25.")      ||
-        primaryHost.startsWith("172.26.")      ||
-        primaryHost.startsWith("172.27.")      ||
-        primaryHost.startsWith("172.28.")      ||
-        primaryHost.startsWith("172.29.")      ||
-        primaryHost.startsWith("172.30.")      ||
-        primaryHost.startsWith("172.31.")      ||
+        primaryHost.startsWith("0.0.0.0")  ||
+        primaryHost.startsWith("localhost") ||
+        primaryHost.startsWith("127.")      ||
+        primaryHost.startsWith("::1")       ||
+        primaryHost.startsWith("10.")       ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(primaryHost) || // 172.16–172.31
         primaryHost.startsWith("192.168.");
       if (!isUnroutableAddress) {
         return `${proto}://${primaryHost}/auth/callback`;
@@ -343,8 +358,7 @@ export function getCallbackUrl(request?: Request): string {
     }
   }
 
-  // 4. Autoscale deployment domain — last resort when no request is available
-  //    and OIDC_CALLBACK_URL was not set.  Prefer setting OIDC_CALLBACK_URL instead.
+  // 4. Last resort — autoscale domain in dev/test without OIDC_CALLBACK_URL.
   if (process.env.REPLIT_DOMAINS) {
     const firstDomain = process.env.REPLIT_DOMAINS.split(",")[0]!.trim();
     return `https://${firstDomain}/auth/callback`;
@@ -352,7 +366,7 @@ export function getCallbackUrl(request?: Request): string {
 
   throw new Error(
     "Cannot determine the OIDC callback URL. " +
-      "Set OIDC_CALLBACK_URL in Replit Secrets (required for deployed environments), " +
-      "or ensure REPLIT_DEV_DOMAIN is injected by the Replit workspace.",
+      "In production: set OIDC_CALLBACK_URL in Replit Secrets (production scope). " +
+      "In development: ensure REPLIT_DEV_DOMAIN is injected by the Replit workspace.",
   );
 }

@@ -1,5 +1,37 @@
 # PodLever Changelog
 
+## 2026-07-23 — OAuth callback URL hardened for production (Task #67)
+
+### Fixed — Production login safety: environment-aware getCallbackUrl()
+Architect review of the iOS auth fix identified a latent production risk: if
+`REPLIT_DEV_DOMAIN` is present in a Cloud Run container (possible in some Replit
+environments) and `OIDC_CALLBACK_URL` is not set, `getCallbackUrl()` would use
+the dev workspace domain as the OAuth `redirect_uri` for production — breaking
+login for all users on podlever.com.
+
+**Changes:**
+- `providers/auth.ts` — `getCallbackUrl()` now splits into two explicit resolution
+  paths based on `NODE_ENV`. In production: `OIDC_CALLBACK_URL` (required) →
+  `REPLIT_DOMAINS` (emergency fallback with error log) → throw. `REPLIT_DEV_DOMAIN`
+  and `x-forwarded-host` are never consulted in production. In development:
+  unchanged behaviour (`OIDC_CALLBACK_URL` → `REPLIT_DEV_DOMAIN` → header-derived
+  host with unroutable-IP guard → `REPLIT_DOMAINS`).
+- `instrumentation.ts` (new) — Next.js server hook; emits a clear `console.error`
+  at boot if `NODE_ENV=production` and `OIDC_CALLBACK_URL` is absent, so
+  misconfiguration is visible in Cloud Run logs before the first login attempt.
+- `config/index.ts` — Added `REPLIT_DOMAINS` and `OIDC_CALLBACK_URL` to the Zod
+  schema so they are typed and validated at startup.
+- Production env var set: `OIDC_CALLBACK_URL=https://podlever.com/auth/callback`
+  (Replit Secrets, production scope).
+
+### Test matrix
+| Environment | OIDC_CALLBACK_URL set? | Resolution | Expected |
+|---|---|---|---|
+| Dev desktop | No | REPLIT_DEV_DOMAIN | ✓ worf.replit.dev/auth/callback |
+| Dev iOS | No | REPLIT_DEV_DOMAIN | ✓ (fixed: no container IP leak) |
+| Prod autoscale | Yes | OIDC_CALLBACK_URL | ✓ podlever.com/auth/callback |
+| Prod autoscale | No | REPLIT_DOMAINS + error log | ⚠ may fail on custom domain |
+
 ## 2026-07-23 — OAuth callback URL fix for iOS / mobile browsers
 
 ### Fixed — "Not allowed to use restricted network port" after OAuth Allow
