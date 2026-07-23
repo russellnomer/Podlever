@@ -1,5 +1,26 @@
 # PodLever Changelog
 
+## 2026-07-23 — OAuth callback URL fix for iOS / mobile browsers
+
+### Fixed — "Not allowed to use restricted network port" after OAuth Allow
+Safari on iOS blocked the OAuth callback because `getCallbackUrl()` was returning a
+container-internal IP (e.g. `172.24.x.x`) as the `redirect_uri`. The iOS Replit app
+routes requests through an internal proxy path where `x-forwarded-host` is set to the
+container IP, not the public Replit domain. The IP passed the old `isLocalAddress` check
+(which only covered `0.0.0.0`, `localhost`, `127.x`, `::1`) and was embedded into the
+OIDC authorization URL. Safari tried to connect to that IP and threw the restricted port error.
+
+**Fix (two parts):**
+1. **Priority reorder** — `REPLIT_DEV_DOMAIN` (always injected by Replit) is now checked
+   *before* `x-forwarded-host`. This guarantees the correct public URL is used in the dev
+   workspace regardless of how the request arrived. `x-forwarded-host` is now a fallback
+   for non-Replit environments only.
+2. **Extended unroutable IP check** — added all RFC-1918 private ranges (`10.x`, full
+   `172.16–31.x`, `192.168.x`) to the guard so they can never slip through even if
+   `REPLIT_DEV_DOMAIN` is absent in an edge-case environment.
+
+Dev server restarted; fix is live.
+
 ## 2026-07-23 — Health check hardening & middleware API bypass fix
 
 ### Fixed — Promote-step failure (health check)
