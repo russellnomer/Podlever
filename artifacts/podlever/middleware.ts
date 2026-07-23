@@ -66,6 +66,13 @@ const PUBLIC_PREFIXES = [
   "/_next/",
   "/favicon",
   "/opengraph-image",
+  // API routes handle their own authentication internally.
+  // The matcher config attempts to exclude /api/ paths but the regex lookahead
+  // does not reliably prevent the middleware from running on API routes in all
+  // Next.js versions. Listing /api/ here guarantees those routes are always
+  // passed through — they enforce auth themselves via requireOwner() /
+  // requireBetaUser() guards in the route handlers.
+  "/api/",
 ];
 
 /** Auth flow routes — always open. No trailing slashes — isAuthPath appends "/" for prefix matching. */

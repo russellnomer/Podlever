@@ -47,6 +47,18 @@ All episode repository calls use `userId` as the scope key. `listEpisodesForOwne
 ## Feedback table
 `db/schema/feedback.ts` — columns: id (uuid), user_id (text, not FK), display_name, page_url, message, created_at. Migration `0008_loose_sage.sql` applied. Server action: `app/actions/feedback.actions.ts`. Widget: `app/dashboard/components/FeedbackWidget.tsx`. Layout: `app/dashboard/layout.tsx`.
 
+## Health check & middleware /api/ bypass
+
+**Problem:** Next.js middleware `matcher` with `(?!api/)` negative lookahead does NOT reliably exclude `/api/` paths. With no session cookie (e.g. Cloud Run health probe), the middleware redirects API requests to `/auth/login` → 307.
+
+**Fix (two parts):**
+1. `app/api/healthz/route.ts` — dedicated health check route, returns `{"ok":true}` immediately, no auth/DB/session. `artifact.toml` health check path updated to `/api/healthz`.
+2. `middleware.ts` `PUBLIC_PREFIXES` — added `/api/` so all API routes bypass the middleware auth redirect. API routes enforce their own auth via `requireOwner()`/`requireBetaUser()`.
+
+**Why this matters:** The Jul 23 promote-step failure was partly caused by this redirect. Cloud Run health probe (no cookie) → middleware redirect → health check fails. Rule: never rely solely on the `matcher` config to exclude paths from middleware logic — also guard inside the middleware with `isPublicPath`.
+
+**Jul 23 infrastructure note:** The promote step failure was also due to an intermittent Replit infra issue — the "Creating Autoscale service" step never ran after image push (failure within 3s, before any container start). Retry resolves this.
+
 ## Production migration automation
 **Problem:** Production DB was missing tables from migrations applied after initial setup. No migrations ran automatically on deploy.
 

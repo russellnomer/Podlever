@@ -1,5 +1,34 @@
 # PodLever Changelog
 
+## 2026-07-23 — Health check hardening & middleware API bypass fix
+
+### Fixed — Promote-step failure (health check)
+The Jul 23 deployment failed at the promote step, NOT the build phase. The image
+built and was pushed successfully. Root causes found and fixed:
+
+1. **Middleware was running on `/api/` routes** — The `matcher` config attempted
+   to exclude `api/` paths via a regex negative lookahead, but Next.js does not
+   reliably honour that exclusion. With no session cookie (e.g. Cloud Run health
+   probe), the middleware was redirecting API requests to `/auth/login` with a 307.
+   Fix: added `/api/` to `PUBLIC_PREFIXES` so the middleware explicitly passes
+   all API routes through. API routes enforce their own auth via `requireOwner()` /
+   `requireBetaUser()` guards.
+
+2. **Health check pointed at `GET /`** — The root page is SSR with session reads.
+   Replaced with a dedicated `GET /api/healthz` endpoint that returns `{"ok":true}`
+   immediately with no auth, no DB, no session — isolated from all app logic.
+   `artifact.toml` updated: `[services.production.health.startup] path = "/api/healthz"`.
+
+Both changes verified: `GET /api/healthz` → 200, `GET /` → 200 in production mode locally.
+
+### Note — Jul 23 05:26 promote failure was also infrastructure-related
+Comparing the Jul 20 success build log vs Jul 23 failure: the "Creating Autoscale
+service" step never ran after the image was pushed (normal sequence is push →
+create service → wait for ready → success). The failure occurred within 3 seconds
+of pushing the manifest — before the container could start. This indicates an
+intermittent Replit infrastructure issue, not a code defect. The health check fix
+above ensures future deployments are more resilient.
+
 ## 2026-07-22 — Build hardening & auth login fix
 
 ### Fixed — TypeScript build error (deployment blocker)
