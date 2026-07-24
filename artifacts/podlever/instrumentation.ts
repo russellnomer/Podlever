@@ -33,28 +33,51 @@ export async function register(): Promise<void> {
     return;
   }
 
-  // ── OIDC_CALLBACK_URL check ──────────────────────────────────────────────
-  // Without this, production login falls back to REPLIT_DOMAINS which does not
-  // match the custom domain (podlever.com) registered with Replit's OIDC provider.
-  // Result: every login attempt returns invalid_grant from the token endpoint.
-  if (!process.env.OIDC_CALLBACK_URL) {
+  // ── OAuth callback URL check ──────────────────────────────────────────────
+  // getCallbackUrl() uses OIDC_CALLBACK_URL (priority 1) or REPLIT_DOMAINS
+  // (priority 2, runtime-injected by Replit Autoscale). At least one must
+  // resolve to the correct production domain (podlever.com) or every login
+  // attempt will return invalid_redirect_uri from Replit's OIDC provider.
+  const hasExplicitUrl  = !!process.env.OIDC_CALLBACK_URL;
+  const hasDomains      = !!process.env.REPLIT_DOMAINS;
+
+  if (!hasExplicitUrl && !hasDomains) {
     console.error(
-      "[startup] ⚠️  PRODUCTION MISCONFIGURATION: OIDC_CALLBACK_URL is not set.\n" +
-        "           OAuth login will fail if a custom domain is active.\n" +
+      "[startup] ⚠️  PRODUCTION MISCONFIGURATION: neither OIDC_CALLBACK_URL nor " +
+        "REPLIT_DOMAINS is set.\n" +
+        "           OAuth login will fail for all users on podlever.com.\n" +
         "           Fix: add OIDC_CALLBACK_URL=https://podlever.com/auth/callback\n" +
         "                to Replit Secrets (production environment scope).",
     );
-  } else {
-    // Confirm the value looks sane — wrong URL is a common copy-paste mistake.
-    if (!process.env.OIDC_CALLBACK_URL.endsWith("/auth/callback")) {
+  } else if (hasExplicitUrl) {
+    // Explicit override is set — confirm it looks sane.
+    if (!process.env.OIDC_CALLBACK_URL!.endsWith("/auth/callback")) {
       console.warn(
-        "[startup] OIDC_CALLBACK_URL does not end with /auth/callback — " +
+        "[startup] ⚠️  OIDC_CALLBACK_URL does not end with /auth/callback — " +
           `current value: ${process.env.OIDC_CALLBACK_URL}. ` +
           "Verify this matches the redirect_uri registered with Replit OIDC.",
       );
     } else {
       console.log(
-        `[startup] OIDC callback URL: ${process.env.OIDC_CALLBACK_URL} ✓`,
+        `[startup] OIDC callback URL (explicit): ${process.env.OIDC_CALLBACK_URL} ✓`,
+      );
+    }
+  } else {
+    // Falling back to REPLIT_DOMAINS — warn if podlever.com is not in the list.
+    const domains = process.env.REPLIT_DOMAINS!.split(",").map((d) => d.trim());
+    const hasProdDomain = domains.some(
+      (d) => d === "podlever.com" || d === "www.podlever.com",
+    );
+    if (!hasProdDomain) {
+      console.warn(
+        "[startup] ⚠️  REPLIT_DOMAINS does not include podlever.com.\n" +
+          `           Current value: ${process.env.REPLIT_DOMAINS}\n` +
+          "           Login may fail on the custom domain. " +
+          "Set OIDC_CALLBACK_URL=https://podlever.com/auth/callback to override.",
+      );
+    } else {
+      console.log(
+        `[startup] OIDC callback URL (REPLIT_DOMAINS): ${domains[0]}/auth/callback ✓`,
       );
     }
   }

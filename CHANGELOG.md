@@ -1,5 +1,32 @@
 # PodLever Changelog
 
+## 2026-07-24 — Fix invalid_redirect_uri on podlever.com (production login)
+
+### Root cause
+The current live production build was sending the dev workspace domain
+(`worf.replit.dev`) as the OIDC `redirect_uri`. Replit's OIDC provider rejects
+it because podlever.com is not that domain. Confirmed: `/auth/callback` on
+podlever.com was 302-redirecting to the `.replit.dev` URL.
+
+### Fix
+1. **`OIDC_CALLBACK_URL=https://podlever.com/auth/callback`** set as a
+   production env var (set in the previous session — this deploy activates it).
+2. **`getCallbackUrl()` production path updated** (`providers/auth.ts`):
+   - Priority 1: `OIDC_CALLBACK_URL` explicit override (set above).
+   - Priority 2: `REPLIT_DOMAINS` with request-host matching — iterates the
+     comma-separated domain list and selects the entry that matches the
+     incoming request host, falling back to the first domain. This is the
+     same pattern used by the working `pawsofkarma.com` Replit Auth setup.
+   - `REPLIT_DEV_DOMAIN` is **never** consulted in production.
+   - Note: `REPLIT_DOMAINS` is runtime-managed by Replit and cannot be set
+     manually; `OIDC_CALLBACK_URL` is the authoritative override.
+3. **`instrumentation.ts` startup check updated** — now validates both
+   `OIDC_CALLBACK_URL` and `REPLIT_DOMAINS`; warns at boot if neither is
+   set or if `REPLIT_DOMAINS` doesn't include `podlever.com`.
+
+### Change classification: Normal (targeted auth config fix, no schema change)
+### Rollback: revert `providers/auth.ts` and `instrumentation.ts` to prior commit
+
 ## 2026-07-23 — OAuth callback URL hardened for production (Task #67)
 
 ### Fixed — Production login safety: environment-aware getCallbackUrl()

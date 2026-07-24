@@ -294,30 +294,43 @@ export function getCallbackUrl(request?: Request): string {
 
   // ── Production resolution path ─────────────────────────────────────────────
   if (isProd) {
-    // 1. Explicit production URL — required; set via Replit Secrets (production scope).
-    //    Value: https://podlever.com/auth/callback
-    //    A startup warning in instrumentation.ts fires when this is missing.
+    // 1. Explicit override — optional but takes priority when set.
+    //    e.g. OIDC_CALLBACK_URL=https://podlever.com/auth/callback
     if (process.env.OIDC_CALLBACK_URL) {
       return process.env.OIDC_CALLBACK_URL;
     }
 
-    // 2. Emergency fallback: Replit Autoscale injects REPLIT_DOMAINS at runtime.
-    //    Use only when OIDC_CALLBACK_URL was not set (misconfiguration).
-    //    Warning: if a custom domain (podlever.com) differs from REPLIT_DOMAINS,
-    //    Replit's OIDC will reject the token exchange with invalid_grant.
+    // 2. REPLIT_DOMAINS — primary production mechanism.
+    //    Set this to your custom domains, comma-separated:
+    //      REPLIT_DOMAINS=podlever.com,www.podlever.com
+    //    Replit Autoscale also auto-injects this at runtime. When multiple domains
+    //    are present, we match against the incoming request host so the redirect_uri
+    //    always equals the domain the user is actually on.
     if (process.env.REPLIT_DOMAINS) {
-      const firstDomain = process.env.REPLIT_DOMAINS.split(",")[0]!.trim();
-      console.error(
-        "[auth] PRODUCTION MISCONFIGURATION: OIDC_CALLBACK_URL is not set. " +
-          "Falling back to REPLIT_DOMAINS — login will fail if a custom domain is active. " +
-          "Set OIDC_CALLBACK_URL=https://podlever.com/auth/callback in Replit Secrets (production).",
-      );
-      return `https://${firstDomain}/auth/callback`;
+      const domains = process.env.REPLIT_DOMAINS
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean);
+
+      // Try to match the incoming request host to a registered domain.
+      if (request) {
+        const rawHost =
+          request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ??
+          new URL(request.url).hostname;
+        const matched = domains.find((d) => d === rawHost);
+        if (matched) {
+          return `https://${matched}/auth/callback`;
+        }
+      }
+
+      // No request or no host match — use the first (primary) domain.
+      return `https://${domains[0]}/auth/callback`;
     }
 
     throw new Error(
-      "Production misconfiguration: OIDC_CALLBACK_URL is not set and REPLIT_DOMAINS " +
-        "is unavailable. Add OIDC_CALLBACK_URL=https://podlever.com/auth/callback " +
+      "Production misconfiguration: neither OIDC_CALLBACK_URL nor REPLIT_DOMAINS " +
+        "is set. Add REPLIT_DOMAINS=podlever.com,www.podlever.com " +
+        "(or OIDC_CALLBACK_URL=https://podlever.com/auth/callback) " +
         "to Replit Secrets (production environment) before deploying.",
     );
   }

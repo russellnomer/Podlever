@@ -1,0 +1,23 @@
+DO NOT rewrite the authentication flow or regenerate the auth code. This is NOT a code-logic bug — it is a domain/config mismatch. Previous attempts failed because they changed the wrong layer. Read this carefully before editing anything.
+
+BUG: On the PRODUCTION site https://podlever.com, clicking "Start for free" (pricing page) redirects to Replit's OIDC login and returns the error "invalid_redirect_uri".
+
+ROOT CAUSE (confirmed): The Replit Auth flow is sending this redirect_uri:
+  https://3c6fd13e-8623-4039-a4c4-da7889e29cdb-00-34klxkjwr2nwp.worf.replit.dev/auth/callback
+That is the DEVELOPMENT domain, not podlever.com. Replit's OIDC provider rejects it because podlever.com is not registered as an allowed callback domain, and the app is building the callback from the dev domain instead of the actual request host. (Confirmed separately: visiting https://podlever.com/auth/callback 302-redirects to the .replit.dev dev domain, proving the production build has the dev domain baked in.)
+
+NOTE: My other deployed app pawsofkarma.com uses this same Replit Auth and works correctly end-to-end. Use its auth configuration as the known-good reference and make PodLever match it.
+
+FIX — do exactly these steps:
+
+1. In this Repl's Secrets, set the REPLIT_DOMAINS environment variable to include the production custom domain(s), comma-separated, e.g.:
+     REPLIT_DOMAINS=podlever.com,www.podlever.com
+   (Include the dev domain too if the app still needs to run in preview, comma-separated.)
+
+2. In the auth setup code (the file that configures Replit Auth / OpenID Connect — typically server/replitAuth.ts or similar), do NOT hardcode any *.replit.dev domain. Register one auth strategy per domain listed in REPLIT_DOMAINS, and build each callbackURL as https://${domain}<CALLBACK_PATH>. At login and callback time, select the strategy using the incoming request host (req.hostname), so the redirect_uri always matches the domain the user is actually on.
+
+3. Make sure the callback route path in the code matches the path used in the redirect_uri (currently /auth/callback). Keep them identical.
+
+4. Redeploy to production.
+
+VERIFY (must pass before you report done): Open https://podlever.com in a logged-out browser, go to /pricing, click "Start for free" under the Free plan. It MUST reach the Replit login/consent screen (or log the user in) — it must NOT show "invalid_redirect_uri". Test on the LIVE podlever.com domain, not the dev preview, because the bug only appears in production.
