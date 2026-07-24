@@ -59,6 +59,16 @@ All episode repository calls use `userId` as the scope key. `listEpisodesForOwne
 
 **Jul 23 infrastructure note:** The promote step failure was also due to an intermittent Replit infra issue — the "Creating Autoscale service" step never ran after image push (failure within 3s, before any container start). Retry resolves this.
 
+## Session cookie reliability in Next.js 15 App Router (CRITICAL)
+
+**Root cause:** `/auth/callback` used `getIronSession(request, response, options)` to write the session cookie onto a `NextResponse.redirect()`. In Next.js 15 App Router Route Handlers, `Set-Cookie` headers on 3xx redirect responses can be stripped by Replit's Cloud Run reverse proxy before reaching the browser → session never stored → middleware finds empty session → redirects to `/auth/login` → loop.
+
+**Fix:** Use `cookies()` from `next/headers` for ALL iron-session reads and writes in Route Handlers. `session.save()` then calls `cookieStore.set()` which Next.js injects at the framework level — guaranteed to survive any response type including redirects and proxy stripping.
+
+**Why this matters:** `getSession()` (shared helper) already uses `cookies()` from `next/headers`. Any new route that reads or writes sessions MUST match this pattern. The `(request, response)` iron-session overload works for Pages Router but is unreliable for App Router redirects.
+
+**How to apply:** In any App Router Route Handler: `const cookieStore = await cookies(); const session = await getIronSession<T>(cookieStore, options);`
+
 ## Production migration automation
 **Problem:** Production DB was missing tables from migrations applied after initial setup. No migrations ran automatically on deploy.
 

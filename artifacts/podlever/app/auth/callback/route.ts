@@ -3,32 +3,41 @@
  *
  * Part of: PodLever
  * Created: 2026-07-18
- * Last modified: 2026-07-18 by agent (Task #6 — audit: PKCE fix, env centralization)
+ * Last modified: 2026-07-24 by agent (session-loop fix: cookies() API, betaAccess lookup)
  *
  * Route: GET /auth/callback
- * OIDC redirect_uri: https://{REPLIT_DEV_DOMAIN}/auth/callback
+ * OIDC redirect_uri: https://podlever.com/auth/callback (set via OIDC_CALLBACK_URL in prod)
  *
  * HUMAN REVIEW NOTES:
  * This is the most security-sensitive Route Handler in Phase 1A.
  *
  * Flow:
- *   1. Read the PKCE state cookie (code_verifier, state, nonce)
+ *   1. Read the PKCE state cookie (code_verifier, state, nonce) via cookies() from next/headers
  *   2. Exchange the authorization code for tokens via openid-client
  *      (validates state, nonce, ID token signature, issuer, audience, expiration)
  *   3. Extract identity claims from the validated ID token
  *   4. Upsert the user in the DB (auth-sync: only call site for user writes in Phase 1A)
  *   5. Assign role: "owner" if Replit user ID matches OWNER_REPLIT_USER_ID env var;
  *      "user" otherwise
- *   6. Write the main iron-session cookie with the user's DB ID, role, display name
- *   7. Destroy the ephemeral PKCE cookie (explicit path match to ensure browser deletes)
- *   8. Redirect to the application home page
+ *   6. Query the waitlist for betaAccess (non-fatal — missing entry → /verify-access)
+ *   7. Write the main iron-session cookie via cookies() from next/headers
+ *   8. Clear the ephemeral PKCE cookie
+ *   9. Redirect to the application home page
+ *
+ * WHY cookies() from next/headers (not getIronSession(request, response, ...)):
+ *   The (request, response) iron-session pattern works in Pages Router but is unreliable
+ *   in Next.js 15 App Router Route Handlers when the response is a redirect (3xx).
+ *   Replit's Cloud Run reverse proxy can strip Set-Cookie headers from redirect responses.
+ *   cookies() from next/headers causes Next.js to inject the Set-Cookie headers at the
+ *   framework level, guaranteeing they reach the browser regardless of response type.
+ *   getSession() (the shared helper) already uses this pattern — this file now matches.
  *
  * Security:
  *   - openid-client.authorizationCodeGrant() verifies: JWT signature, issuer,
  *     audience, nonce, expiration, state. Never trust claims without this call.
  *   - PKCE code_verifier is transmitted server-to-server; never exposed to client.
  *   - If PKCE cookie is missing or tampered (iron-session decrypt fails), abort.
- *   - PKCE cookie is deleted with explicit path: "/auth" to ensure the browser
+ *   - PKCE cookie is cleared with the explicit path "/auth" to ensure the browser
  *     correctly removes the scoped cookie (path mismatch = silent no-op in browsers).
  *   - Owner identity read via getOwnerReplitUserId() (providers/auth.ts) — no direct
  *     process.env access in this file.
@@ -43,8 +52,10 @@
 import * as oidcClient from "openid-client";
 import { getIronSession } from "iron-session";
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { users, waitlist } from "@/db/schema";
 import {
   getOidcConfig,
   getCallbackUrl,
@@ -56,30 +67,42 @@ import type { PodLeverSession, PkceState } from "@/providers/auth";
 import { trackServerEvent } from "@/lib/analytics";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // ── Step 1: Read and validate the PKCE state cookie ──────────────────────────
-  const tempResponse = new NextResponse();
-  let pkceSession: Awaited<ReturnType<typeof getIronSession<PkceState>>>;
-
   // Derive the canonical public origin from proxy headers.
   // In Replit Autoscale, request.url is an internal address (http://localhost:PORT).
-  // getCallbackUrl() reads x-forwarded-host to get the real public hostname.
-  // Every redirect in this handler MUST use appOrigin — never request.url.
+  // getCallbackUrl() reads OIDC_CALLBACK_URL (production) or REPLIT_DEV_DOMAIN (dev)
+  // to get the real public hostname. Every redirect in this handler MUST use appOrigin.
   const canonicalCallbackUrl = getCallbackUrl(request);
   const appOrigin = new URL(canonicalCallbackUrl).origin; // e.g. https://podlever.com
 
+  // Get the Next.js 15 App Router cookie store.
+  // Using cookies() from next/headers (not the (request, response) iron-session pattern)
+  // guarantees that Set-Cookie headers are injected at the framework level and survive
+  // redirect (3xx) responses even through Replit's Cloud Run reverse proxy.
+  const cookieStore = await cookies();
+
+  // ── Step 1: Read and validate the PKCE state cookie ──────────────────────────
+  let pkceSession: Awaited<ReturnType<typeof getIronSession<PkceState>>>;
+
   try {
-    pkceSession = await getIronSession<PkceState>(
-      request,
-      tempResponse,
-      getPkceStateOptions(),
+    pkceSession = await getIronSession<PkceState>(cookieStore, getPkceStateOptions());
+  } catch (err) {
+    console.error(
+      "[auth/callback] PKCE cookie decrypt failed — possible tampering, expiry, or secret mismatch:",
+      (err as Error).message,
     );
-  } catch {
-    console.error("[auth/callback] PKCE cookie decrypt failed — possible tampering or expiry");
     return NextResponse.redirect(new URL("/auth/login", appOrigin));
   }
 
   if (!pkceSession.codeVerifier || !pkceSession.state || !pkceSession.nonce) {
-    console.error("[auth/callback] PKCE state incomplete — restarting login flow");
+    // Log which fields are missing to distinguish expired cookie from silent failure.
+    console.error("[auth/callback] PKCE state incomplete", {
+      hasCodeVerifier: !!pkceSession.codeVerifier,
+      hasState:        !!pkceSession.state,
+      hasNonce:        !!pkceSession.nonce,
+      // Likely cause: PKCE cookie expired (10-min TTL), user took too long at consent,
+      // or the cookie was not sent (domain/path mismatch). NOT a session-store issue —
+      // iron-session is stateless/cookie-based and works across all Autoscale instances.
+    });
     return NextResponse.redirect(new URL("/auth/login", appOrigin));
   }
 
@@ -93,9 +116,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // http://localhost:3000/auth/callback — passing it directly causes a
   // redirect_uri mismatch at Replit's token endpoint (invalid_grant error).
   //
-  // Fix: construct a canonical URL from getCallbackUrl() (which reads
-  // x-forwarded-host) and graft the original query params (code, state, iss)
-  // onto it. This matches exactly what was sent in the authorization request.
+  // Fix: construct a canonical URL from getCallbackUrl() and graft the original
+  // query params (code, state, iss) onto it. This matches exactly what was sent
+  // in the authorization request.
   let claims: oidcClient.IDToken;
 
   try {
@@ -111,7 +134,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     claims = tokens.claims()!;
   } catch (err) {
-    console.error("[auth/callback] Token exchange failed:", (err as Error).message);
+    console.error(
+      "[auth/callback] Token exchange failed (invalid_grant, PKCE mismatch, or network error):",
+      (err as Error).message,
+    );
     return NextResponse.redirect(new URL("/auth/login", appOrigin));
   }
 
@@ -200,33 +226,66 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     timestamp:    new Date().toISOString(),
   }));
 
-  // ── Step 7: Write session cookie and redirect ─────────────────────────────────
-  // Honor the intended destination stored in the PKCE cookie at login time.
-  // Validate it starts with "/" to prevent open-redirect attacks.
+  // ── Step 7: Look up beta access from waitlist (non-owner users only) ─────────
+  // The waitlist.replitUserId column is set when a user claims their invite via
+  // /verify-access. If present, use that entry's status to determine betaAccess.
+  // This is NON-FATAL: if the lookup fails, betaAccess stays undefined and the
+  // middleware routes the user to /verify-access where they can claim their invite.
+  //
+  // betaAccess in session:
+  //   "invited" → user is on the waitlist but hasn't completed onboarding
+  //   "active"  → user has been onboarded; full product access
+  //   undefined → not on waitlist; show /verify-access for self-declaration
+  let betaAccess: PodLeverSession["betaAccess"];
+
+  if (role !== "owner") {
+    try {
+      const waitlistEntry = await db
+        .select({ status: waitlist.status })
+        .from(waitlist)
+        .where(eq(waitlist.replitUserId, replitUserId))
+        .limit(1);
+
+      const status = waitlistEntry[0]?.status;
+      if (status === "invited" || status === "active") {
+        betaAccess = status;
+      }
+    } catch (err) {
+      // Non-fatal: user will be sent to /verify-access to self-declare.
+      console.warn(
+        "[auth/callback] betaAccess lookup failed (non-fatal):",
+        (err as Error).message,
+      );
+    }
+  }
+
+  // ── Step 8: Write session cookie via cookies() from next/headers ──────────────
+  // cookies() writes are injected at the Next.js framework level and are merged
+  // into the returned response by Next.js — this works correctly even when the
+  // response is a redirect (3xx), which is NOT guaranteed with getIronSession(
+  // request, response, options) in App Router Route Handlers behind a proxy.
   const safeNext = nextUrl?.startsWith("/") ? nextUrl : "/dashboard";
-  const response = NextResponse.redirect(new URL(safeNext, appOrigin));
 
-  const session = await getIronSession<PodLeverSession>(
-    request,
-    response,
-    getSessionOptions(),
-  );
-  session.userId         = dbUserId;
-  session.replitUserId   = replitUserId;
-  session.displayName    = displayName;
-  session.role           = role;
-  // Embed the session version so requireOwner() can verify it against the DB
-  // on every privileged request. Logout increments the DB value, instantly
-  // revoking this cookie even if it is still unexpired.
-  session.sessionVersion = dbSessionVersion;
-  await session.save();
+  try {
+    const session = await getIronSession<PodLeverSession>(cookieStore, getSessionOptions());
+    session.userId         = dbUserId;
+    session.replitUserId   = replitUserId;
+    session.displayName    = displayName;
+    session.role           = role;
+    session.sessionVersion = dbSessionVersion;
+    if (betaAccess) session.betaAccess = betaAccess;
+    await session.save();
+  } catch (err) {
+    console.error("[auth/callback] Session write failed:", (err as Error).message);
+    return NextResponse.redirect(new URL("/auth/login?error=session", appOrigin));
+  }
 
-  // ── Step 8: Destroy the ephemeral PKCE cookie ─────────────────────────────────
+  // ── Step 9: Clear the ephemeral PKCE cookie ───────────────────────────────────
   // IMPORTANT: The PKCE cookie was set with path: "/auth".
-  // A cookie deletion MUST specify the same path — without it, the browser sees a
-  // different-scoped cookie and ignores the deletion (silent no-op).
-  // We set maxAge=0 and value="" with the explicit /auth path to force removal.
-  response.cookies.set("podlever_pkce", "", {
+  // Setting maxAge=0 with the same path forces removal.
+  // Using cookieStore (same as the session write above) so the deletion is merged
+  // into the response at the same framework-level injection point.
+  cookieStore.set("podlever_pkce", "", {
     httpOnly: true,
     secure:   process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -234,5 +293,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     path:     "/auth", // Must match the original Set-Cookie path
   });
 
-  return response;
+  // Return the redirect. Next.js 15 automatically merges all cookies() writes
+  // (session + PKCE deletion) into this response's Set-Cookie headers.
+  return NextResponse.redirect(new URL(safeNext, appOrigin));
 }

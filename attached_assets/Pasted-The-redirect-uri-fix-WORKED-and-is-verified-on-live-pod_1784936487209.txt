@@ -1,0 +1,19 @@
+The redirect_uri fix WORKED and is verified on live podlever.com — users now reach the Replit consent screen. DO NOT touch the OIDC_CALLBACK_URL / redirect_uri configuration again. There is now a SECOND, separate bug: the post-consent session loop.
+
+BUG: On live https://podlever.com, after clicking "Allow" on the Replit consent screen, the user is bounced back to the consent/sign-in screen in an endless loop and never reaches /dashboard.
+
+EVIDENCE (from a live network trace): the app's /auth/callback appears to complete, then redirects toward /dashboard, but the very next request to /auth/login?next=/dashboard shows the user as NOT logged in, so it starts a new OIDC round trip. Conclusion: the OIDC code exchange may be succeeding, but the app's own session is NOT persisting between the callback response and the next request on podlever.com.
+
+This deployment is AUTOSCALE. Diagnose in this exact order and fix what you find — all four of these are classic causes of exactly this loop:
+
+1. SESSION STORE: If sessions use MemoryStore (the default), Autoscale runs multiple instances and the session written by /auth/callback does not exist on the instance serving the next request → infinite loop. Sessions MUST be stored in the shared production Postgres database (e.g. connect-pg-simple) — never in memory. Check this FIRST.
+
+2. TRUST PROXY: The app runs behind Replit's proxy. If the session cookie is secure:true but Express doesn't have app.set("trust proxy", 1), Express thinks the request is HTTP and silently refuses to set the secure cookie. Verify trust proxy is set in production.
+
+3. COOKIE SAMESITE: The return from replit.com to podlever.com is a cross-site navigation. The session cookie must be sameSite:"lax" (NOT "strict") and secure:true, or the browser will not send it on the redirect back → loop.
+
+4. SILENT CALLBACK FAILURE: Add error logging inside /auth/callback. If the token exchange or state/PKCE check throws, do not silently redirect to /auth/login — log the actual error to production logs so it's visible.
+
+Also confirm the session secret env var is set in the PRODUCTION deployment (a missing SESSION_SECRET in prod that exists in dev causes exactly this too), and that login initiated on www.podlever.com and apex podlever.com both resolve to ONE canonical host so the cookie domain matches.
+
+VERIFY before reporting done: In the LIVE production app (not dev preview), a logged-out user goes to podlever.com/pricing → Start for free → signs in with Replit → clicks Allow → MUST land on /dashboard as a logged-in user, and MUST still be logged in after a hard page refresh. If you cannot verify on production yourself, state that explicitly and stop — do not claim success from dev behavior.

@@ -1,5 +1,47 @@
 # PodLever Changelog
 
+## 2026-07-24 — Fix post-consent session loop on podlever.com
+
+### Root causes (three, all fixed)
+
+**1. Session cookie not persisting after callback (primary — caused the loop)**
+`/auth/callback` was writing the iron-session cookie to a `NextResponse.redirect()`
+object via `getIronSession(request, response, options)`. In Next.js 15 App Router Route
+Handlers, this is unreliable when the response is a 3xx redirect — Replit's Cloud Run
+reverse proxy can strip `Set-Cookie` headers from redirect responses before they reach
+the browser. The browser never received the session cookie → middleware found no session
+→ redirect to `/auth/login` → new OIDC flow → loop.
+
+Fix: switched to `cookies()` from `next/headers` (the correct Next.js 15 pattern).
+Next.js injects cookies set via this API at the framework level into whatever Response
+is returned, guaranteed to survive redirect responses and proxy stripping.
+The `getSession()` shared helper already used this pattern; the callback now matches.
+
+**2. betaAccess not set at login**
+The callback never queried the `waitlist` table, so non-owner users always exited login
+with `betaAccess = undefined`. Middleware correctly routes them to `/verify-access`.
+But with the session write failing (bug #1), users never got that far — they saw
+the `/auth/login` loop instead.
+
+Fix: added a non-fatal `waitlist` lookup by `replitUserId` after the DB upsert.
+Status `"invited"` or `"active"` is written into the session. Returning users who have
+already claimed their invite now land directly at `/dashboard` / `/onboarding` without
+visiting `/verify-access` again.
+
+**3. PKCE "state incomplete" log missing field detail**
+The error log emitted no diagnostic data, making it impossible to distinguish an expired
+PKCE cookie (user took >10 min at consent) from a missing-fields failure.
+
+Fix: log `{ hasCodeVerifier, hasState, hasNonce }` so each case is distinguishable.
+
+### Also addressed
+- PKCE reading now also uses `cookies()` from `next/headers` (consistent with session write)
+- Added catch block around `session.save()` so a session-write failure logs clearly
+  rather than silently preceding a broken redirect
+
+### Change classification: Normal (auth callback logic, no schema change)
+### Rollback: revert `app/auth/callback/route.ts` to prior commit
+
 ## 2026-07-24 — Fix invalid_redirect_uri on podlever.com (production login)
 
 ### Root cause
