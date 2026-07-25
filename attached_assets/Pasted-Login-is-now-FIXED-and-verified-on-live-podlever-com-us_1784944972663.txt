@@ -1,0 +1,17 @@
+Login is now FIXED and verified on live podlever.com — users get through Replit consent and stay logged in. DO NOT touch the OIDC config or session store again. The next blocker is the waitlist/invite gate at /verify-access, which is a dead end for every user.
+
+BUG (verified on live production with a network trace): After logging in, users land on /verify-access ("You're almost in"). Submitting an email under "Claim my invite" returns a 303 redirect to /verify-access?error=not_invited — but the page does NOT render any error message. The user just sees the same empty form again: no feedback, no confirmation email, no way forward. "Request access" likewise gives no confirmation the request was recorded. Result: ZERO users can enter the app, and they don't even know why.
+
+FIX — in this exact order:
+
+1. ERROR + SUCCESS FEEDBACK: The /verify-access page must read the ?error= query param and render a clear visible message (e.g. "That email isn't on the waitlist yet — tap Request access below."). Every form submission must end in visible feedback: success confirmation or a specific error. No silent re-renders anywhere in this flow.
+
+2. OWNER BYPASS: The app owner's Replit account (russell@russellnomer.com — also add any admin flag mechanism you already have) must be automatically allowed into the app without needing a waitlist invite. The owner must never be blocked by his own invite gate.
+
+3. REQUEST ACCESS MUST WORK END TO END: Submitting "Request access" must (a) store the request, (b) show an on-screen confirmation, and (c) surface new requests somewhere the owner can see and approve them (an /admin page or list). If an email notification is supposed to send, verify the email service is actually configured in production — if it is not configured, say so explicitly rather than pretending it sends.
+
+4. WAITLIST LINKING: If a user's email IS on the waitlist, claiming must link the account and take them straight into /dashboard — verify this path works on production, not just in dev.
+
+5. DECISION CHECK: Report how many emails are currently in the waitlist/invited table in the PRODUCTION database (count only, no personal data in the chat). If the table is empty, that means no user has ever been able to enter the app — flag it.
+
+VERIFY before reporting done, on LIVE podlever.com: (a) the owner logs in with Replit and reaches /dashboard with no invite gate; (b) a non-invited email gets a visible, human-readable error; (c) Request access shows a confirmation and the request is visible to the owner. If you cannot verify on production, say so explicitly and stop.

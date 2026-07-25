@@ -1,5 +1,46 @@
 # PodLever Changelog
 
+## 2026-07-24 — Fix /verify-access dead end + owner bypass
+
+### Root causes fixed
+1. **No error/success feedback** — form submissions redirected to `?error=not_invited` but
+   the page never read `searchParams`, so users saw a blank re-render with no explanation.
+2. **"Request access" was a dead link** — pointed to `/` (home), not a form. User had no
+   way to get into the queue.
+3. **Owner blocked by own gate** — `OWNER_REPLIT_USER_ID` was not set in production, so
+   the owner logged in as `role: "user"`, hit the invite gate, and could not enter the app.
+4. **No admin surface for access requests** — owner had no way to see or action new requests.
+
+### Changes
+- **`app/verify-access/page.tsx`** — reads `searchParams` (Next.js 15 async pattern),
+  renders human-readable banners for every `?error=` and `?message=` value. Two distinct
+  forms: "Claim my invite" and "Request access" with clear labels and outcomes.
+- **`app/actions/beta.actions.ts`** — added `requestAccessAction`: validates email, checks
+  for existing entries (guides user to claim form if already invited, shows "already on list"
+  if in queue), inserts new entry with status "new" and source "verify_access", redirects
+  with `?message=request_sent`. No email notification (email service not configured —
+  owner monitors `/admin/waitlist`).
+- **`app/admin/waitlist/page.tsx`** (new) — owner-only page at `/admin/waitlist`. Shows
+  all entries with status badges, "linked" indicator, source, date. One-click "Invite"
+  button for `new`/`contacted`/`qualified` entries. Status summary counts at top.
+  Explicit notice that email notifications are not configured.
+- **`app/actions/admin.actions.ts`** (new) — `inviteWaitlistEntryAction`: owner-only,
+  calls `waitlistRepository.markLeadInvited(id)` → status → "invited".
+- **`OWNER_REPLIT_USER_ID=19531679`** set as production env var (confirmed from deployment
+  logs — owner was logging in as role "user").
+
+### Production waitlist state (confirmed)
+Total: 2 entries, status: `new` (×2). Invited: 0. Active: 0. No user has ever been able
+to enter the app — the owner must visit `/admin/waitlist` after deploy and click "Invite"
+for any users they want to admit.
+
+### Email notification status
+**Not configured.** No email service is set up in production. Owner must manually
+inform invitees to go to podlever.com, log in with Replit, and enter their email on
+the `/verify-access` page.
+
+### Change classification: Normal (UX fix + admin surface, no schema change)
+
 ## 2026-07-24 — Fix post-consent session loop on podlever.com
 
 ### Root causes (three, all fixed)

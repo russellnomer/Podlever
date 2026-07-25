@@ -31,3 +31,4 @@ channel = "stable-25_05"
 
 [userenv.production]
 OIDC_CALLBACK_URL = "https://podlever.com/auth/callback"
+OWNER_REPLIT_USER_ID = "19531679"
