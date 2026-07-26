@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p ${PORT:-3000} -H 0.0.0.0",
     "build": "next build",
-    "build:prod": "node scripts/migrate-prod.mjs && next build",
+    "build:prod": "next build",
     "start": "next start -p ${PORT:-3000} -H 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
@@ -18,7 +18,8 @@
     "verify-auth": "tsx scripts/verify-auth.ts",
     "verify-export-rate-limit": "tsx scripts/verify-export-rate-limit.ts",
     "stripe:setup": "tsx scripts/setup-stripe-live.ts",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "db:migrate:manual": "node scripts/migrate-prod.mjs"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
