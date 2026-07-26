@@ -27,6 +27,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getAuthUser } from "@/providers/auth";
 import { WaitlistForm } from "@/app/components/WaitlistForm";
+import { DemoShowcase } from "@/app/components/DemoShowcase";
 
 // ─── Per-page SEO override ────────────────────────────────────────────────────
 
@@ -221,62 +222,9 @@ function HeroSection() {
         </div>
 
         {/* Hero asset preview */}
-        <HeroAssetPreview />
+        <DemoShowcase />
       </div>
     </section>
-  );
-}
-
-/** Visual mockup of the 7 output assets — shows the product value without screenshots. */
-function HeroAssetPreview() {
-  const assets = [
-    { icon: "🎵", label: "Cleaned Audio", color: "amber" },
-    { icon: "📝", label: "Transcript", color: "zinc" },
-    { icon: "▶️", label: "YouTube Cut", color: "red" },
-    { icon: "📱", label: "Vertical Clip", color: "purple" },
-    { icon: "📋", label: "Show Notes", color: "zinc" },
-    { icon: "✍️", label: "Blog Post", color: "zinc" },
-    { icon: "📣", label: "Social Posts", color: "blue" },
-  ] as const;
-
-  return (
-    <div className="mt-12 relative" aria-label="Output assets preview" role="img">
-      {/* Inbound: single recording */}
-      <div className="flex justify-center mb-6">
-        <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-zinc-900 border border-zinc-700/60">
-          <span className="text-2xl" aria-hidden="true">🎙️</span>
-          <div className="text-left">
-            <p className="text-zinc-100 text-sm font-medium">episode-142.mp4</p>
-            <p className="text-zinc-500 text-xs">1h 23m · 1.2 GB raw recording</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Arrow */}
-      <div className="flex justify-center mb-6" aria-hidden="true">
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-px h-6 bg-gradient-to-b from-zinc-700 to-amber-500/50" />
-          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-amber-500/60" />
-        </div>
-      </div>
-
-      {/* Output grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 max-w-3xl mx-auto">
-        {assets.map((asset) => (
-          <div
-            key={asset.label}
-            className="flex flex-col items-center gap-2 px-3 py-4 rounded-xl bg-zinc-900/80 border border-zinc-800/60 hover:border-zinc-700 transition-colors"
-          >
-            <span className="text-2xl" aria-hidden="true">{asset.icon}</span>
-            <p className="text-zinc-400 text-xs text-center leading-tight font-medium">
-              {asset.label}
-            </p>
-            <div className="w-full h-0.5 rounded-full bg-amber-500/20" aria-hidden="true" />
-            <p className="text-amber-400/70 text-xs">Ready</p>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
