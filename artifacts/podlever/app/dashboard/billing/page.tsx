@@ -174,10 +174,17 @@ export default async function BillingPage({
           {/* Episode limit */}
           <div className="mt-5 pt-5 border-t border-gray-100">
             <p className="text-sm text-gray-600">
-              <span className="font-medium">
-                {tier.episodesPerMonth === Infinity ? "Unlimited" : tier.episodesPerMonth}
-              </span>{" "}
-              {tier.episodesPerMonth === 1 ? "episode" : "episodes"}/month included
+              {tier.isTrialOnly ? (
+                // One-time trial — not a recurring monthly allowance
+                <>
+                  <span className="font-medium">1 episode</span> (one-time trial)
+                </>
+              ) : (
+                <>
+                  <span className="font-medium">{tier.episodesPerMonth}</span>{" "}
+                  {tier.episodesPerMonth === 1 ? "episode" : "episodes"}/month included
+                </>
+              )}
             </p>
           </div>
 
@@ -213,10 +220,10 @@ export default async function BillingPage({
               />
               <UpgradeCard
                 name="Agency"
-                priceMonthly={136}
-                priceAnnual={97}
+                priceMonthly={199}
+                priceAnnual={149}
                 href="/pricing?upgrade=agency"
-                features={["Unlimited episodes", "White-label exports", "5 team seats", "API access", "Priority SLA"]}
+                features={["50 episodes/month", "White-label exports", "5 team seats", "API access", "Priority SLA"]}
               />
             </div>
             <p className="text-xs text-gray-400 mt-3 text-center">

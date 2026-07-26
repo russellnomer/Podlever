@@ -26,16 +26,31 @@ const MAX_MB = 25;
 interface EpisodeUploadFormProps {
   /** When true, shows a plan-limit reached message instead of the upload form. */
   atLimit?: boolean;
-  /** User's current plan label (e.g. "Free"). Shown in the upgrade prompt. */
+  /** User's current plan label (e.g. "Free trial"). Shown in the upgrade prompt. */
   planLabel?: string;
-  /** Number of episodes used this period. */
+  /** Number of episodes used this period (or lifetime for trial tiers). */
   used?: number;
-  /** Episode limit for this period. */
+  /** Episode limit for this period (or lifetime for trial tiers). */
   limit?: number;
+  /**
+   * When true, the gate message uses "trial used" copy instead of "monthly limit".
+   * Matches the `isTrialOnly` flag from UsageSummary.
+   */
+  isTrialOnly?: boolean;
 }
 
-export function EpisodeUploadForm({ atLimit, planLabel, used, limit }: EpisodeUploadFormProps) {
+export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly }: EpisodeUploadFormProps) {
   if (atLimit) {
+    // Two distinct gate messages depending on whether the plan is a one-time trial
+    // or a recurring monthly subscription.
+    const headline = isTrialOnly
+      ? "Free trial used"
+      : "Monthly limit reached";
+
+    const detail = isTrialOnly
+      ? "Your free trial episode has been used. Upgrade to keep processing episodes."
+      : `You've used ${used ?? 0}/${limit ?? 1} episodes on the ${planLabel ?? "Free"} plan this month.`;
+
     return (
       <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">
         <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center">
@@ -43,11 +58,10 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit }: EpisodeUp
         </div>
         <div>
           <p className="text-base font-semibold text-gray-900 mb-1">
-            Monthly limit reached
+            {headline}
           </p>
           <p className="text-sm text-gray-500">
-            You&apos;ve used {used}/{limit === Infinity ? "∞" : limit} episodes on the{" "}
-            <span className="font-medium">{planLabel ?? "Free"}</span> plan this month.
+            {detail}
           </p>
         </div>
         <a

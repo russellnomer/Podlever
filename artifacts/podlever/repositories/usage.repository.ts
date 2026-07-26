@@ -19,7 +19,7 @@
  *   of user count; safe for the admin dashboard.
  */
 
-import { and, count, gte, eq, desc, sql } from "drizzle-orm";
+import { and, count, gte, eq, desc, sql, lt } from "drizzle-orm";
 import { db }             from "@/db";
 import { usageEvents }    from "@/db/schema/usage-events";
 import { users }          from "@/db/schema/users";
@@ -33,9 +33,9 @@ import type { UsageEventType } from "@/db/schema/usage-events";
  * Includes their current plan limits for display in the upload gate.
  */
 export interface UsageSummary {
-  /** Number of episodes processed this billing period. */
+  /** Number of episodes processed this billing period (or lifetime for trial). */
   used: number;
-  /** Max episodes allowed this period (Infinity = unlimited). */
+  /** Max episodes allowed this period (or lifetime for trial). */
   limit: number;
   /** UTC start of the current billing period (first of the month). */
   periodStart: Date;
@@ -45,6 +45,11 @@ export interface UsageSummary {
   tierLabel: string;
   /** True when the user is at or above their limit. */
   atLimit: boolean;
+  /**
+   * True when this tier uses a lifetime trial model (1 episode ever).
+   * The upload gate and UI copy should reflect "trial used" not "monthly limit".
+   */
+  isTrialOnly: boolean;
 }
 
 /**
@@ -84,10 +89,35 @@ class UsageRepository {
   }
 
   /**
+   * getTotalEpisodesEver — Count all episodes a user has ever processed.
+   *
+   * Used for `isTrialOnly` tiers (free) where the cap is a lifetime allowance
+   * of 1 episode, not a monthly reset. Returns the total across all time.
+   *
+   * @param userId - DB UUID of the user to check
+   */
+  async getTotalEpisodesEver(userId: string): Promise<number> {
+    const [row] = await db
+      .select({ total: count() })
+      .from(usageEvents)
+      .where(
+        and(
+          eq(usageEvents.userId, userId),
+          eq(usageEvents.eventType, "episode_processed"),
+        ),
+      );
+    return row?.total ?? 0;
+  }
+
+  /**
    * getUsageSummary — Compute a user's current-period usage vs their plan limit.
    *
-   * The period window is the current UTC calendar month (1st to now).
-   * Stripe webhooks (#14) will refine this to the exact billing period.
+   * For `isTrialOnly` tiers (free), the window is the user's entire account
+   * lifetime — they get exactly 1 episode ever, no monthly reset.
+   *
+   * For recurring tiers (pro, agency, beta), the window is the current UTC
+   * calendar month (1st to now). Stripe webhooks (#14) will refine this to
+   * the exact billing period.
    *
    * @param userId - DB UUID of the user to check
    * @returns UsageSummary with used count, tier limit, and atLimit flag
@@ -107,7 +137,23 @@ class UsageRepository {
     const now         = new Date();
     const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-    // ── Count events in current period ──────────────────────────────────────
+    if (tier.isTrialOnly) {
+      // ── Trial tier: gate on lifetime count, not monthly ───────────────────
+      // Free users get exactly 1 episode ever. No monthly reset.
+      const used  = await this.getTotalEpisodesEver(userId);
+      const limit = 1;
+      return {
+        used,
+        limit,
+        periodStart,  // Still populated (used by admin view)
+        plan,
+        tierLabel:   tier.label,
+        atLimit:     used >= limit,
+        isTrialOnly: true,
+      };
+    }
+
+    // ── Recurring tier: count events in current calendar month ───────────
     const [row] = await db
       .select({ total: count() })
       .from(usageEvents)
@@ -127,8 +173,9 @@ class UsageRepository {
       limit,
       periodStart,
       plan,
-      tierLabel: tier.label,
-      atLimit:   used >= limit,
+      tierLabel:   tier.label,
+      atLimit:     used >= limit,
+      isTrialOnly: false,
     };
   }
 

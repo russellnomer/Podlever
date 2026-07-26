@@ -83,6 +83,7 @@ export default async function NewEpisodePage() {
             planLabel={usage.tierLabel}
             used={usage.used}
             limit={usage.limit}
+            isTrialOnly={usage.isTrialOnly}
           />
         </div>
 

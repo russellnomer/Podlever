@@ -597,7 +597,7 @@ function PricingCtaSection() {
           {[
             { name: "Free", price: "$0", tagline: "1 episode/mo" },
             { name: "Pro", price: "$29/mo", tagline: "10 episodes/mo", highlight: true },
-            { name: "Agency", price: "$97/mo", tagline: "Unlimited" },
+            { name: "Agency", price: "$149/mo", tagline: "50 episodes/mo" },
           ].map((tier) => (
             <div
               key={tier.name}

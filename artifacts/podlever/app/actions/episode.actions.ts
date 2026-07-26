@@ -35,7 +35,7 @@ import { redirect }       from "next/navigation";
 import { after }          from "next/server";
 import { requireBetaUser } from "@/providers/owner-guard";
 import { episodeService } from "@/services";
-import { episodeRepository, assetRepository } from "@/repositories";
+import { episodeRepository, assetRepository, usageRepository } from "@/repositories";
 import { uploadAudioBuffer } from "@/lib/storage";
 import { executeTransition } from "@/server/fsm";
 import { trackServerEvent }  from "@/lib/analytics";
@@ -133,6 +133,19 @@ const ALLOWED_AUDIO_TYPES = new Set([
  */
 export async function uploadEpisodeAction(formData: FormData): Promise<never> {
   const { userId } = await requireBetaUser();
+
+  // ── Server-side usage gate ──────────────────────────────────────────────────
+  // This is the authoritative check — the UI gate (EpisodeUploadForm atLimit) is
+  // informational only and can be bypassed by invoking this action directly.
+  // For isTrialOnly tiers (free), lifetime count is checked.
+  // For recurring tiers (pro, agency, beta), monthly count is checked.
+  const usage = await usageRepository.getUsageSummary(userId);
+  if (usage.atLimit) {
+    const msg = usage.isTrialOnly
+      ? "Your free trial episode has been used. Upgrade to process more episodes."
+      : `You've reached your ${usage.plan} plan limit of ${usage.limit} episodes this month.`;
+    throw new Error(msg);
+  }
 
   // ── Validate title ──────────────────────────────────────────────────────────
   const title = z

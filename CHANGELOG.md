@@ -1,5 +1,35 @@
 # PodLever Changelog
 
+## 2026-07-24 — Pricing tier update: new rates, remove unlimited language
+
+### Changes
+- **`lib/tiers.ts`** — Extended `TierDef` interface with `isTrialOnly`, `maxAudioMinutes`,
+  `pricePerMonthMonthly`, and `extraEpisodePriceUsd`. Agency: 50 ep/mo, $149 annual / $199 monthly,
+  $3 extra. Pro: $29/$41, $4 extra. Free: `isTrialOnly: true` (1 episode ever, no monthly reset).
+  Removed `Infinity` from Agency entirely.
+- **`repositories/usage.repository.ts`** — `getUsageSummary` now branches on `isTrialOnly`:
+  free users are gated on lifetime count (`getTotalEpisodesEver`) instead of monthly count.
+  `UsageSummary` type extended with `isTrialOnly` flag. New `getTotalEpisodesEver()` method.
+- **`app/dashboard/episodes/components/EpisodeUploadForm.tsx`** — Gate message now has two
+  variants: "Free trial used" (trial tiers) vs "Monthly limit reached" (recurring tiers).
+  Props extended with `isTrialOnly`.
+- **`app/dashboard/episodes/new/page.tsx`** — Passes `usage.isTrialOnly` to `EpisodeUploadForm`.
+- **`app/dashboard/billing/page.tsx`** — Agency upgrade card: $136/$97 → $199/$149, "Unlimited
+  episodes" → "50 episodes/month". Removed `Infinity` equality check.
+- **`app/pricing/page.tsx`** — `DISPLAY_PRICES.agency` updated to 149/199. Feature table:
+  Agency episodes "Unlimited" → "50", revisions "Unlimited" → "3/ep". Free tier card copy:
+  "one-time trial." Agency perks: "50 episodes/month", added "3 revisions per episode", removed
+  "Unlimited episodes" and "Unlimited revisions", added "Extra episodes $3 each". Pro perks:
+  added "Extra episodes $4 each". FAQ: "free tier expire" → "how does the trial work";
+  formats/limits FAQ updated with per-tier duration limits.
+- **`app/page.tsx`** — Home page tier teaser: Agency $97 → $149, "Unlimited" → "50 episodes/mo".
+
+### Enforcement
+The free trial gate (lifetime cap) is now live in `UsageRepository`. Agency users are now
+capped at 50/mo by the existing monthly gate (previously `Infinity` bypassed it entirely).
+
+### Change classification: Normal (pricing copy + logic, no schema migration required)
+
 ## 2026-07-24 — Fix /verify-access dead end + owner bypass
 
 ### Root causes fixed

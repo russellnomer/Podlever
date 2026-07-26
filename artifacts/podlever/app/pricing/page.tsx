@@ -15,10 +15,10 @@
  *      WaitlistForm on Pro and Agency cards.
  *   4. Falls back to a mailto CTA if Stripe is unreachable.
  *
- * Pricing (annual rates; monthly is ~1.4×):
- *   Free    → $0/mo      (1 episode/month, core assets only)
- *   Pro     → $29/mo     ($348/yr — Founding Member price-locked forever)
- *   Agency  → $97/mo     ($1,164/yr — Founding Member price-locked forever)
+ * Pricing (annual rates; monthly fallback):
+ *   Free    → $0         (1 episode ever, one-time trial, no card)
+ *   Pro     → $29/mo     ($348/yr — Founding Member price-locked forever; $41 monthly)
+ *   Agency  → $149/mo    ($1,788/yr — Founding Member price-locked forever; $199 monthly)
  *
  * HUMAN REVIEW NOTES:
  * - CheckoutButton is a Client Component — reads localStorage "podlever_billing_period"
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Founding Member Pricing — PodLever",
     description:
-      "Founding Member rates: Pro ($29/mo) and Agency ($97/mo) — price locked forever, cancel anytime.",
+      "Founding Member rates: Pro ($29/mo) and Agency ($149/mo) — price locked forever, cancel anytime.",
     url: "/pricing",
   },
 };
@@ -68,9 +68,9 @@ interface TierPrices {
 
 /** Monthly-equivalent dollar amounts shown in the UI for each billing period. */
 const DISPLAY_PRICES = {
-  free:   { annual: 0,  monthly: 0   },
-  pro:    { annual: 29, monthly: 41  },
-  agency: { annual: 97, monthly: 136 },
+  free:   { annual: 0,   monthly: 0   },
+  pro:    { annual: 29,  monthly: 41  },
+  agency: { annual: 149, monthly: 199 },
 } as const;
 
 type Tier = "free" | "pro" | "agency";
@@ -82,7 +82,7 @@ const FEATURES: Array<{
   {
     category: "Processing",
     items: [
-      { label: "Episodes per month",      free: "1",         pro: "10",       agency: "Unlimited" },
+      { label: "Episodes per month",      free: "1 (trial)", pro: "10",       agency: "50" },
       { label: "Max file duration",       free: "60 min",    pro: "4 hours",  agency: "4 hours" },
       { label: "Processing priority",     free: "Standard",  pro: "Priority", agency: "Priority" },
     ],
@@ -104,7 +104,7 @@ const FEATURES: Array<{
     category: "Platform",
     items: [
       { label: "Asset download",          free: true,   pro: true,           agency: true          },
-      { label: "Revision requests",       free: "1/ep", pro: "3/ep",         agency: "Unlimited"   },
+      { label: "Revision requests",       free: "1/ep", pro: "3/ep",         agency: "3/ep"        },
       { label: "Team seats",              free: "1",    pro: "1",            agency: "5"           },
       { label: "Roadmap voting",          free: false,  pro: true,           agency: true          },
       { label: "White-label exports",     free: false,  pro: false,          agency: true          },
@@ -299,18 +299,18 @@ export default async function PricingPage({
             {/* Free */}
             <TierCard
               tier="free"
-              name="Free"
-              tagline="Try PodLever risk-free"
+              name="Free trial"
+              tagline="Try PodLever once, free"
               displayPrices={DISPLAY_PRICES.free}
               highlight={false}
               badge={null}
-              cta={{ kind: "link", href: "/auth/login?next=/dashboard", label: "Start for free", variant: "outline" }}
+              cta={{ kind: "link", href: "/auth/login?next=/dashboard", label: "Start free trial", variant: "outline" }}
               perks={[
-                "1 episode per month",
+                "1 episode — one-time trial",
                 "Transcript + show notes",
                 "Cleaned audio export",
                 "60-minute max file duration",
-                "Community support",
+                "No credit card required",
               ]}
             />
 
@@ -332,9 +332,10 @@ export default async function PricingPage({
                 "All 8 output assets",
                 "Priority processing queue",
                 "4-hour max file duration",
-                "3 revision requests per episode",
+                "3 revisions per episode",
                 "Roadmap voting rights",
                 "Email support",
+                "Extra episodes $4 each",
               ]}
             />
 
@@ -352,15 +353,16 @@ export default async function PricingPage({
                   : { kind: "mailto", label: "Contact us to join Agency", variant: "outline" }
               }
               perks={[
-                "Unlimited episodes",
+                "50 episodes per month",
                 "All 8 output assets",
                 "Priority processing",
                 "5 team seats",
-                "Unlimited revisions",
+                "3 revisions per episode",
                 "Roadmap voting rights",
                 "White-label exports",
                 "API access",
                 "Priority email support (24h SLA)",
+                "Extra episodes $3 each",
               ]}
             />
           </div>
@@ -458,12 +460,12 @@ export default async function PricingPage({
                 a: "Yes. No lock-in, no cancellation fees. Cancel from your billing dashboard and you keep access until the end of your paid period. Annual plans are non-refundable after the first 14 days, but you're never trapped.",
               },
               {
-                q: "When does the free tier expire?",
-                a: "It doesn't. The free tier is permanently free — 1 episode per month, every month. No trial period, no credit card required.",
+                q: "How does the free trial work?",
+                a: "You get one episode processed for free — no credit card required. Use it to see exactly what PodLever produces before committing. Once your trial episode is done, you'll need to upgrade to continue.",
               },
               {
                 q: "What audio/video formats do you support?",
-                a: "MP3, MP4, WAV, M4A, and MOV. Files up to 4 hours in length (1 hour on Free). More formats coming — Founding Members vote on what comes next.",
+                a: "MP3, MP4, WAV, M4A, and MOV. Free trial: up to 60 minutes. Pro and Agency: up to 4 hours. More formats coming — Founding Members vote on what comes next.",
               },
             ].map((faq) => (
               <div
