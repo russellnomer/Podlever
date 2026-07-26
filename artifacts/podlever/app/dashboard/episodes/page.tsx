@@ -42,7 +42,7 @@ function StateBadge({ state }: { state: string }) {
 
 // ─── Episode card ─────────────────────────────────────────────────────────────
 
-function EpisodeCard({ episode }: { episode: Episode }) {
+function EpisodeCard({ episode, queueHint }: { episode: Episode; queueHint?: string | null }) {
   const created = new Date(episode.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   });
@@ -61,7 +61,10 @@ function EpisodeCard({ episode }: { episode: Episode }) {
           <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-indigo-700 transition-colors">
             {episode.title}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{created}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {created}
+            {queueHint && <span className="ml-2 text-amber-600 font-medium">{queueHint}</span>}
+          </p>
         </div>
       </div>
       <StateBadge state={episode.state} />
@@ -86,6 +89,29 @@ export default async function EpisodesPage() {
 
   const episodes = await episodeRepository.listEpisodesForOwner(ownerId);
   const processingCount = episodes.filter((e) => e.state === "processing").length;
+
+  // Assembly-line hints: which processing episode is up now vs. waiting in line
+  const STAGE_LABELS: Record<string, string> = {
+    downloading: "Fetching audio", enhancing: "Enhancing audio",
+    transcribing: "Transcribing", generating: "Writing content", packaging: "Packaging",
+  };
+  const queueHints = new Map<string, string>();
+  if (processingCount > 0) {
+    try {
+      const { getProcessQueue } = await import("@/lib/job-queue");
+      const queue = await getProcessQueue();
+      queue.forEach((q, idx) => {
+        const ep = episodes.find((e) => e.id === q.episodeId);
+        if (!ep) return;
+        const stage = (ep as { processingStage?: string | null }).processingStage;
+        if (idx === 0 || stage) {
+          queueHints.set(q.episodeId, `\u25b8 ${STAGE_LABELS[stage ?? ""] ?? "Starting"}\u2026`);
+        } else {
+          queueHints.set(q.episodeId, `\u23f3 In line \u2014 #${idx + 1}`);
+        }
+      });
+    } catch { /* hints are optional */ }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -145,7 +171,7 @@ export default async function EpisodesPage() {
         ) : (
           <div className="space-y-3">
             {episodes.map((episode) => (
-              <EpisodeCard key={episode.id} episode={episode} />
+              <EpisodeCard key={episode.id} episode={episode} queueHint={queueHints.get(episode.id) ?? null} />
             ))}
           </div>
         )}

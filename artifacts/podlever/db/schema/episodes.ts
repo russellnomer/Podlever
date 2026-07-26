@@ -124,6 +124,20 @@ export const episodes = pgTable("episodes", {
    * Null until the owner explicitly enables sharing.
    */
   shareToken: uuid("share_token").unique(),
+
+  /**
+   * Current pipeline stage while state = "processing" (telemetry, NOT part of
+   * the FSM): "downloading" | "enhancing" | "transcribing" | "generating" |
+   * "packaging". Null when idle/complete. Drives the assembly-line stepper.
+   */
+  processingStage: text("processing_stage"),
+
+  /**
+   * Human-readable message from the most recent processing failure.
+   * Cleared when processing (re)starts. Shown on the episode page so
+   * failures are never a mystery spinner.
+   */
+  processingError: text("processing_error"),
 });
 
 // ─── TypeScript types ─────────────────────────────────────────────────────────

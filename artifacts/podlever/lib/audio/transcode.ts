@@ -24,6 +24,7 @@
 
 import "server-only";
 
+import { getFfmpegPath, getFfprobePath } from "@/lib/audio/binaries";
 import { execFile }                    from "node:child_process";
 import { promisify }                   from "node:util";
 import { writeFile, readFile, unlink, mkdtemp, readdir, rm } from "node:fs/promises";
@@ -54,7 +55,7 @@ const KNOWN_EXTENSIONS = new Set([
 /** ffprobe the duration of a media file (seconds), or null on failure. */
 async function probeDurationSeconds(path: string): Promise<number | null> {
   try {
-    const { stdout } = await execFileAsync("ffprobe", [
+    const { stdout } = await execFileAsync(getFfprobePath(), [
       "-v", "error",
       "-show_entries", "format=duration",
       "-of", "default=noprint_wrappers=1:nokey=1",
@@ -93,7 +94,7 @@ export async function prepareForTranscription(
 
     // Strip video (-vn), mono (-ac 1), 16 kHz (-ar 16000), 32 kbps MP3 —
     // the standard speech-transcription preprocessing profile.
-    await execFileAsync("ffmpeg", [
+    await execFileAsync(getFfmpegPath(), [
       "-y", "-i", inPath,
       "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k",
       "-f", "mp3", outPath,
@@ -107,7 +108,7 @@ export async function prepareForTranscription(
 
     // Still too big (100+ minute episode) — split into fixed-length segments.
     const segmentPattern = join(workDir, "segment-%03d.mp3");
-    await execFileAsync("ffmpeg", [
+    await execFileAsync(getFfmpegPath(), [
       "-y", "-i", outPath,
       "-f", "segment",
       "-segment_time", String(SEGMENT_SECONDS),

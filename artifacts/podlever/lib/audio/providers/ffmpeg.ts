@@ -28,6 +28,7 @@
 
 import "server-only";
 
+import { getFfmpegPath } from "@/lib/audio/binaries";
 import { execFile }        from "node:child_process";
 import { promisify }       from "node:util";
 import { writeFile, readFile, unlink } from "node:fs/promises";
@@ -103,7 +104,7 @@ class FFmpegProvider implements AudioProvider {
       // -y          overwrite output without prompting
       // -ac 1       downmix to mono (podcast-optimized, ~50% smaller for Whisper)
       // -ar 44100   44.1 kHz sample rate
-      await execFileAsync("ffmpeg", [
+      await execFileAsync(getFfmpegPath(), [
         "-y",
         "-i",  inputPath,
         "-af", "afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11",
