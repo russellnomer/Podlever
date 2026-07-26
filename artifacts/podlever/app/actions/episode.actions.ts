@@ -36,7 +36,8 @@ import { after }          from "next/server";
 import { requireBetaUser } from "@/providers/owner-guard";
 import { episodeService } from "@/services";
 import { episodeRepository, assetRepository, usageRepository } from "@/repositories";
-import { uploadAudioBuffer } from "@/lib/storage";
+import { uploadAudioBuffer, ensureUploadCors, getSignedUploadUrl } from "@/lib/storage";
+import { signUploadToken } from "@/lib/upload-token";
 import { executeTransition } from "@/server/fsm";
 import { trackServerEvent }  from "@/lib/analytics";
 import { randomUUID }     from "crypto";
@@ -240,6 +241,76 @@ const MAX_DIRECT_BYTES = 300 * 1024 * 1024;
 export type FinalizeUploadResult =
   | { ok: true; episodeId: string }
   | { ok: false; error: string };
+
+/** Result of requesting a signed direct-upload URL. */
+export type SignUploadResult =
+  | { ok: true; uploadUrl: string; storageKey: string; token: string }
+  | { ok: false; error: string };
+
+/** Extensions we can process (audio directly; video via FFmpeg extraction). */
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  "mp3", "m4a", "wav", "ogg", "flac",         // audio
+  "mp4", "mov", "webm", "m4v", "mpeg", "mpg", // video (audio track extracted)
+]);
+
+/**
+ * getSignedUploadUrlAction — Mint a signed direct-upload URL (Server Action).
+ *
+ * Replaces the former POST /api/uploads/sign route. In production a separate
+ * Express "api-server" owns every /api/* path, so Next.js route handlers under
+ * /api are shadowed and return an HTML 404 — which the browser then fails to
+ * parse as JSON ("Unexpected token '<'"). Server Actions are served by Next.js
+ * itself (like login and finalizeDirectUploadAction), so they bypass that
+ * conflict entirely.
+ *
+ * The browser PUTs the file straight to GCS with the returned signed URL, then
+ * calls finalizeDirectUploadAction with the storageKey + token.
+ *
+ * SECURITY: beta users/owner only; storage key is a server-generated UUID
+ * (clients can't choose paths); token is an HMAC over userId:storageKey that
+ * finalize re-verifies; size/type validated here and re-checked at finalize.
+ */
+export async function getSignedUploadUrlAction(input: {
+  filename: string;
+  contentType?: string;
+  sizeBytes: number;
+}): Promise<SignUploadResult> {
+  let userId: string;
+  try {
+    ({ userId } = await requireBetaUser());
+  } catch {
+    return { ok: false, error: "Not authorized. Please sign in again." };
+  }
+
+  const filename    = typeof input.filename === "string" ? input.filename : "";
+  const contentType = input.contentType || "application/octet-stream";
+  const sizeBytes   = typeof input.sizeBytes === "number" ? input.sizeBytes : 0;
+
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+    return { ok: false, error: "Unsupported format. Use MP3, M4A, WAV, OGG, FLAC, MP4, MOV, or WEBM." };
+  }
+  if (!sizeBytes || sizeBytes <= 0) {
+    return { ok: false, error: "Missing file size." };
+  }
+  if (sizeBytes > MAX_DIRECT_BYTES) {
+    return {
+      ok: false,
+      error: `File is too large (${(sizeBytes / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_DIRECT_BYTES / 1024 / 1024} MB.`,
+    };
+  }
+
+  try {
+    // Ensure the bucket accepts browser PUTs (no-op after the first success).
+    await ensureUploadCors();
+    const storageKey = `audio/direct/${randomUUID()}/original.${ext}`;
+    const uploadUrl  = await getSignedUploadUrl(storageKey, contentType);
+    const token      = signUploadToken(userId, storageKey);
+    return { ok: true, uploadUrl, storageKey, token };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not prepare the upload." };
+  }
+}
 
 /**
  * finalizeDirectUploadAction — Create an episode from a completed direct
