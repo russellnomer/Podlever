@@ -25,8 +25,9 @@ import { LEAD_STATUSES }          from "@/db/schema";
 import {
   inviteWaitlistEntryAction,
   directInviteByEmailAction,
+  deleteWaitlistEntryAction,
 } from "@/app/actions/admin.actions";
-import { Users, ArrowLeft, Mail, CheckCircle, Clock, UserCheck, Send, UserPlus } from "lucide-react";
+import { Users, ArrowLeft, Mail, CheckCircle, Clock, UserCheck, Send, UserPlus, Trash2 } from "lucide-react";
 
 // ─── Invite email (professional copy, sent from the owner's mail client) ──────
 
@@ -91,11 +92,17 @@ export default async function AdminWaitlistPage({
   const flashMessages: Record<string, string> = {
     direct_invited:
       "Invited! Now click “Send invite email” on their row below — it opens a pre-written email in your mail client.",
+    invited_emailed:
+      "Invited — the invitation email was sent automatically from invites@podlever.com. ✉️",
+    invited_manual:
+      "Invited! Auto-email isn't configured, so click “Send invite email” on their row to send it from your mail client.",
+    deleted: "Waitlist entry removed.",
   };
   const flashErrors: Record<string, string> = {
     invalid_email:  "That doesn't look like a valid email address.",
     already_active: "That person already has an active account.",
     invite_failed:  "Invite failed — check server logs.",
+    delete_failed:  "Delete failed — check server logs.",
     missing_id:     "Missing entry ID.",
   };
 
@@ -271,30 +278,41 @@ export default async function AdminWaitlistPage({
                         })}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {canInvite ? (
-                          <form action={inviteWaitlistEntryAction}>
+                        <div className="flex items-center justify-end gap-2">
+                          {canInvite ? (
+                            <form action={inviteWaitlistEntryAction}>
+                              <input type="hidden" name="id" value={entry.id} />
+                              <button
+                                type="submit"
+                                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold
+                                           text-white hover:bg-indigo-700 transition-colors"
+                              >
+                                Invite
+                              </button>
+                            </form>
+                          ) : entry.status === "invited" ? (
+                            <a
+                              href={inviteMailtoHref(entry.email)}
+                              className="inline-flex items-center gap-1 rounded-md border border-indigo-300
+                                         bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700
+                                         hover:bg-indigo-50 transition-colors"
+                            >
+                              <Send className="h-3 w-3" />
+                              Send invite email
+                            </a>
+                          ) : null}
+                          <form action={deleteWaitlistEntryAction}>
                             <input type="hidden" name="id" value={entry.id} />
                             <button
                               type="submit"
-                              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold
-                                         text-white hover:bg-indigo-700 transition-colors"
+                              title="Remove from waitlist"
+                              className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-400
+                                         hover:border-red-300 hover:text-red-600 transition-colors"
                             >
-                              Invite
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </form>
-                        ) : entry.status === "invited" ? (
-                          <a
-                            href={inviteMailtoHref(entry.email)}
-                            className="inline-flex items-center gap-1 rounded-md border border-indigo-300
-                                       bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700
-                                       hover:bg-indigo-50 transition-colors"
-                          >
-                            <Send className="h-3 w-3" />
-                            Send invite email
-                          </a>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );
