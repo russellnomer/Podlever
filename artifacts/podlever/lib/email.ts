@@ -188,17 +188,19 @@ async function sendViaSmtp(
  *
  * Tries the service account first (no stored password), then SMTP.
  *
- * @param toEmail - the invitee's address (also the address they must enter
- *                  on /verify-access to claim the invite)
+ * @param toEmail   - the invitee's address (also the address they must enter
+ *                    on /verify-access to claim the invite)
+ * @param firstName - optional first name for a personal greeting ("Hi David,")
  * @returns true if the message was accepted, false on any failure
  *          (callers fall back to the manual mailto flow — never throw).
  */
-export async function sendInviteEmail(toEmail: string): Promise<boolean> {
+export async function sendInviteEmail(toEmail: string, firstName?: string): Promise<boolean> {
   if (!isEmailConfigured()) return false;
 
   const subject = "Your private beta invitation to PodLever";
 
-  const text = `Hi,
+  const greeting = firstName?.trim() ? `Hi ${firstName.trim()},` : "Hi,";
+  const text = `${greeting}
 
 I'd like to personally invite you to the private beta of PodLever.
 

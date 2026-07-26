@@ -35,6 +35,12 @@ import {
   uploadFileBuffer,
 }                                     from "@/lib/storage";
 import { enhanceAudio }               from "@/lib/audio";
+import { prepareForTranscription }    from "@/lib/audio/transcode";
+
+/** Control-flow marker: enhancement intentionally skipped (large/video input). */
+class SkipEnhancement extends Error {
+  constructor() { super("enhancement skipped"); }
+}
 import { recordCogs, estimateAudioCost, estimateTokenCost, PRICING_USD } from "@/lib/cogs";
 import { generateGuestPackPdf }       from "@/lib/pdf/guest-pack";
 import {
@@ -135,11 +141,15 @@ export async function POST(
     const mimeMap: Record<string, string> = {
       mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav",
       ogg: "audio/ogg",  flac: "audio/flac",
+      mp4: "video/mp4",  mov: "video/quicktime", webm: "video/webm",
+      m4v: "video/mp4",  mpeg: "video/mpeg",     mpg: "video/mpeg",
     };
     const mimeType = mimeMap[ext] ?? "audio/mpeg";
+    const isVideo  = mimeType.startsWith("video/");
 
-    // Estimate audio duration from file size (rough: 128kbps MP3 ≈ 16KB/s)
-    const estimatedAudioSeconds = Math.round(originalBuffer.byteLength / (128 * 1024 / 8));
+    // Fallback duration estimate (rough: 128kbps MP3 ≈ 16KB/s) — replaced by
+    // the real ffprobe duration from prepareForTranscription when available.
+    let estimatedAudioSeconds = Math.round(originalBuffer.byteLength / (128 * 1024 / 8));
 
     // ── 3. Audio enhancement (ffmpeg-adaptive → ffmpeg provider chain) ────────
     // enhanceAudio selects the best available provider and falls back through
@@ -147,7 +157,21 @@ export async function POST(
     let processedBuffer: Buffer = originalBuffer;
     let processedMime:   string = mimeType;
 
+    // Enhancement providers output uncompressed WAV, so cap it to inputs that
+    // won't balloon memory (large files / video skip straight to the
+    // speech-compression step — transcription quality is unaffected).
+    const ENHANCE_MAX_BYTES = 25 * 1024 * 1024;
+    const skipEnhancement   = isVideo || originalBuffer.byteLength > ENHANCE_MAX_BYTES;
+
     try {
+      if (skipEnhancement) {
+        console.log(JSON.stringify({
+          event: "audio.enhance.skipped", episodeId,
+          reason: isVideo ? "video_input" : "large_input",
+          bytes: originalBuffer.byteLength,
+        }));
+        throw new SkipEnhancement();
+      }
       const enhanceResult = await enhanceAudio(originalBuffer, mimeType, episodeId);
       processedBuffer = enhanceResult.buffer;
       processedMime   = enhanceResult.mimeType;
@@ -186,23 +210,44 @@ export async function POST(
       }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: "audio_cleanup", error: String(err) })));
 
     } catch (err) {
-      // All providers failed (extremely rare — FFmpeg should always succeed).
-      // Log and continue with original audio; transcription still works.
-      console.warn(JSON.stringify({
-        event:     "audio.enhance.all_failed",
-        episodeId,
-        error:     err instanceof Error ? err.message : String(err),
-      }));
+      if (!(err instanceof SkipEnhancement)) {
+        // All providers failed (extremely rare — FFmpeg should always succeed).
+        // Log and continue with original audio; transcription still works.
+        console.warn(JSON.stringify({
+          event:     "audio.enhance.all_failed",
+          episodeId,
+          error:     err instanceof Error ? err.message : String(err),
+        }));
+      }
     }
 
-    // ── 5. Transcribe with Whisper ──────────────────────────────────────────
-    // Use the cleaned audio if available, else original
-    const audioFile     = await toFile(processedBuffer, `episode.${ext}`, { type: processedMime });
-    const transcription = await openai.audio.transcriptions.create({
-      model: MODELS.transcription,
-      file:  audioFile,
-    });
-    const transcript = transcription.text;
+    // ── 5. Compress + transcribe ────────────────────────────────────────────
+    // The transcription API caps requests at 25 MB, so ALL audio (enhanced or
+    // original, audio or video) is compressed to speech-optimized mono MP3
+    // first, and split into chunks when a compressed episode still exceeds
+    // the cap (100+ minutes). Chunks are transcribed in order and joined.
+    const processedExt = processedMime === "audio/wav" ? "wav" : ext;
+    const { chunks, durationSeconds } = await prepareForTranscription(processedBuffer, processedExt);
+    if (durationSeconds) {
+      estimatedAudioSeconds = Math.round(durationSeconds);
+    }
+
+    const transcriptParts: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const audioFile     = await toFile(chunks[i]!, `episode-part-${i}.mp3`, { type: "audio/mpeg" });
+      const transcription = await openai.audio.transcriptions.create({
+        model: MODELS.transcription,
+        file:  audioFile,
+      });
+      transcriptParts.push(transcription.text.trim());
+      if (chunks.length > 1) {
+        console.log(JSON.stringify({
+          event: "episode.process.chunk_transcribed",
+          episodeId, chunk: i + 1, of: chunks.length,
+        }));
+      }
+    }
+    const transcript = transcriptParts.join("\n\n");
 
     const transcriptCost = estimateAudioCost("gpt-4o-mini-transcribe", estimatedAudioSeconds);
     recordCogs({

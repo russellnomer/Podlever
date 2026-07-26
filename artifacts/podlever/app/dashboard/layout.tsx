@@ -16,21 +16,33 @@
  */
 
 import { FeedbackWidget } from "./components/FeedbackWidget";
+import { DashboardHeader, DashboardFooter } from "./components/DashboardShell";
+import { getAuthUser } from "@/providers/auth";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Session is read for display only — each page still enforces its own auth.
+  const session = await getAuthUser();
+
   return (
-    <>
-      {children}
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      {session && (
+        <DashboardHeader
+          displayName={session.displayName || "there"}
+          isOwner={session.role === "owner"}
+        />
+      )}
+      <div className="flex-1">{children}</div>
+      <DashboardFooter />
       {/*
        * FeedbackWidget — floating feedback button + modal.
        * Rendered outside the page scrolling context so it always stays in
        * the viewport corner regardless of page scroll position.
        */}
       <FeedbackWidget />
-    </>
+    </div>
   );
 }

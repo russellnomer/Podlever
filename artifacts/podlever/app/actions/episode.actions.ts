@@ -230,3 +230,136 @@ export async function uploadEpisodeAction(formData: FormData): Promise<never> {
   // Redirect to the episode detail page — this throws internally (Next.js redirect)
   redirect(`/dashboard/episodes/${episodeId}`);
 }
+
+// ─── Direct-upload finalize ───────────────────────────────────────────────────
+
+/** Max size accepted for direct-to-GCS uploads (matches the sign route). */
+const MAX_DIRECT_BYTES = 300 * 1024 * 1024;
+
+/** Result returned to the upload form (errors are shown inline, never masked). */
+export type FinalizeUploadResult =
+  | { ok: true; episodeId: string }
+  | { ok: false; error: string };
+
+/**
+ * finalizeDirectUploadAction — Create an episode from a completed direct
+ * browser→GCS upload.
+ *
+ * The browser first PUTs the file straight to GCS using a signed URL from
+ * POST /api/uploads/sign (no server body-size limits, no memory pressure),
+ * then calls this action with the storage key + HMAC token.
+ *
+ * FormData fields:
+ *   title:      string — episode title
+ *   storageKey: string — GCS object name issued by the sign route
+ *   token:      string — HMAC binding (userId, storageKey); prevents claiming
+ *                        objects the user wasn't issued
+ *   filename:   string — original filename (label only)
+ *
+ * Unlike uploadEpisodeAction this RETURNS errors instead of throwing, so the
+ * form can show a human-readable message (production masks thrown errors).
+ */
+export async function finalizeDirectUploadAction(formData: FormData): Promise<FinalizeUploadResult> {
+  let userId: string;
+  try {
+    ({ userId } = await requireBetaUser());
+  } catch {
+    return { ok: false, error: "Your session has expired. Please sign in again." };
+  }
+
+  try {
+    // ── Usage gate (authoritative) ──────────────────────────────────────────
+    const usage = await usageRepository.getUsageSummary(userId);
+    if (usage.atLimit) {
+      return {
+        ok: false,
+        error: usage.isTrialOnly
+          ? "Your free trial episode has been used. Upgrade to process more episodes."
+          : `You've reached your ${usage.plan} plan limit of ${usage.limit} episodes this month.`,
+      };
+    }
+
+    // ── Validate inputs ─────────────────────────────────────────────────────
+    const titleParse = z.string().trim().min(1).max(255).safeParse(formData.get("title"));
+    if (!titleParse.success) {
+      return { ok: false, error: "Please enter an episode title (up to 255 characters)." };
+    }
+    const title      = titleParse.data;
+    const storageKey = formData.get("storageKey");
+    const token      = formData.get("token");
+    const filename   = typeof formData.get("filename") === "string"
+      ? (formData.get("filename") as string)
+      : "upload";
+
+    if (typeof storageKey !== "string" || !/^audio\/direct\/[0-9a-f-]{36}\/original\.[a-z0-9]{2,5}$/.test(storageKey)) {
+      return { ok: false, error: "Upload reference is invalid. Please try uploading again." };
+    }
+    const { verifyUploadToken } = await import("@/lib/upload-token");
+    if (typeof token !== "string" || !verifyUploadToken(userId, storageKey, token)) {
+      return { ok: false, error: "Upload verification failed. Please try uploading again." };
+    }
+
+    // ── Verify the object actually landed and respects the cap ─────────────
+    const { getObjectSize } = await import("@/lib/storage");
+    const sizeBytes = await getObjectSize(storageKey);
+    if (sizeBytes === null) {
+      return { ok: false, error: "The uploaded file was not found in storage. Please try again." };
+    }
+    if (sizeBytes > MAX_DIRECT_BYTES) {
+      return { ok: false, error: `File is too large (${(sizeBytes / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_DIRECT_BYTES / 1024 / 1024} MB.` };
+    }
+
+    // ── Create episode + asset, transition, enqueue ─────────────────────────
+    const episode   = await episodeService.createEpisode({ title }, userId);
+    const episodeId = episode.id;
+
+    await episodeRepository.setAudioStorageKey(episodeId, storageKey);
+    await assetRepository.createAssetVersion({
+      episodeId,
+      assetType:  "cleaned_audio",
+      label:      `Original upload: ${filename}`,
+      storageKey,
+      content:    null,
+    });
+
+    trackServerEvent("episode_created", userId, { episodeId });
+
+    await executeTransition({
+      episodeId,
+      ownerId:           userId,
+      fromState:         "draft",
+      currentFsmVersion: episode.fsmVersion,
+      toState:           "processing",
+      idempotencyKey:    randomUUID(),
+      metadata:          JSON.stringify({ source: "direct-upload", filename, sizeBytes }),
+    });
+
+    const { enqueueJob } = await import("@/lib/job-queue");
+    await enqueueJob("process_episode", { episodeId, ownerId: userId });
+
+    const port      = process.env.PORT ?? "3000";
+    const workerUrl = `http://localhost:${port}/rpc/queue/worker`;
+    const secret    = process.env.CRON_SECRET ?? "";
+    after(async () => {
+      try {
+        const res = await fetch(workerUrl, {
+          method:  "POST",
+          headers: { Authorization: `Bearer ${secret}` },
+        });
+        if (!res.ok && res.status !== 204) {
+          console.error(JSON.stringify({ event: "episode.worker.trigger_failed", episodeId, status: res.status }));
+        }
+      } catch (err) {
+        console.error(JSON.stringify({ event: "episode.worker.trigger_error", episodeId, error: String(err) }));
+      }
+    });
+
+    return { ok: true, episodeId };
+  } catch (err) {
+    // Surface the real reason — production masks thrown server errors into an
+    // unreadable digest, which makes beta debugging impossible.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(JSON.stringify({ event: "episode.finalize.failed", error: msg }));
+    return { ok: false, error: `Upload failed: ${msg}` };
+  }
+}

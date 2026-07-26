@@ -130,3 +130,72 @@ export async function getSignedDownloadUrl(
   });
   return url;
 }
+
+/**
+ * ensureUploadCors — Make sure the bucket accepts browser PUTs (direct upload).
+ *
+ * Direct-to-GCS uploads bypass the web server entirely (no request-size
+ * limits, no server memory pressure), but the browser needs the bucket to
+ * answer CORS preflight for PUT. This sets a minimal CORS rule once per
+ * process; failures are logged and swallowed — callers fall back to the
+ * legacy server-action upload for small files.
+ */
+let corsEnsured = false;
+export async function ensureUploadCors(): Promise<void> {
+  if (corsEnsured) return;
+  try {
+    const bucket = getBucket();
+    await bucket.setCorsConfiguration([
+      {
+        origin:         ["*"],
+        method:         ["PUT", "GET", "HEAD"],
+        responseHeader: ["Content-Type"],
+        maxAgeSeconds:  3600,
+      },
+    ]);
+    corsEnsured = true;
+  } catch (err) {
+    console.warn(JSON.stringify({
+      event: "storage.cors.setup_failed",
+      error: (err as Error).message,
+    }));
+  }
+}
+
+/**
+ * getSignedUploadUrl — Generate a short-lived signed URL for a direct browser
+ * PUT to GCS. The client must send the exact Content-Type used here.
+ *
+ * @param storageKey   Full GCS object name (server-generated, never client-chosen)
+ * @param contentType  MIME type the browser will send
+ * @param expiresMs    URL lifetime (default 30 minutes — enough for slow links)
+ */
+export async function getSignedUploadUrl(
+  storageKey:  string,
+  contentType: string,
+  expiresMs = 30 * 60 * 1000,
+): Promise<string> {
+  const bucket = getBucket();
+  const [url] = await bucket.file(storageKey).getSignedUrl({
+    version:     "v4",
+    action:      "write",
+    expires:     Date.now() + expiresMs,
+    contentType,
+  });
+  return url;
+}
+
+/**
+ * getObjectSize — Return an uploaded object's size in bytes, or null if it
+ * doesn't exist. Used by the finalize action to verify a direct upload
+ * actually landed and respects the size cap.
+ */
+export async function getObjectSize(storageKey: string): Promise<number | null> {
+  try {
+    const [metadata] = await getBucket().file(storageKey).getMetadata();
+    const size = Number(metadata.size);
+    return Number.isFinite(size) ? size : null;
+  } catch {
+    return null;
+  }
+}

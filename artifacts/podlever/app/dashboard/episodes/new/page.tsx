@@ -89,8 +89,8 @@ export default async function NewEpisodePage() {
 
         {/* Tip */}
         <p className="mt-4 text-center text-xs text-gray-400">
-          Audio is processed via OpenAI Whisper. Max file size: 25 MB.
-          Typical processing time: 1–3 minutes.
+          Audio and video up to 300 MB. Long episodes are compressed and
+          transcribed automatically. Typical processing time: 2–5 minutes.
         </p>
       </main>
     </div>

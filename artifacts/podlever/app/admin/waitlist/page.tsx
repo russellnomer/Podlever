@@ -197,7 +197,14 @@ export default async function AdminWaitlistPage({
               name="email"
               required
               placeholder="name@example.com"
-              className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+              className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+            />
+            <input
+              type="text"
+              name="name"
+              maxLength={80}
+              placeholder="First name (optional)"
+              className="w-44 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
             />
             <button
               type="submit"

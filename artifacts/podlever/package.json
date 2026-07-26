@@ -17,6 +17,7 @@
     "verify-fsm": "tsx scripts/verify-fsm.ts",
     "verify-auth": "tsx scripts/verify-auth.ts",
     "verify-export-rate-limit": "tsx scripts/verify-export-rate-limit.ts",
+    "stripe:setup": "tsx scripts/setup-stripe-live.ts",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
