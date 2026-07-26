@@ -33,6 +33,21 @@ export async function register(): Promise<void> {
     return;
   }
 
+  // ── Database migrations (runtime, not build time) ─────────────────────────
+  // Replit Autoscale builds run in the workspace environment where
+  // DATABASE_URL is the DEVELOPMENT database; the production URL only exists
+  // at runtime. Running migrations here guarantees they hit the real prod DB
+  // on every boot. Drift-proof + advisory-locked; never crashes the server.
+  //
+  // NOTE: the import MUST be wrapped in a literal NEXT_RUNTIME === "nodejs"
+  // check — webpack inlines that constant per-bundle and dead-code-eliminates
+  // the import from the Edge bundle (startup-migrations uses node:fs/pg,
+  // which cannot compile for Edge).
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { runStartupMigrations } = await import("./lib/startup-migrations");
+    await runStartupMigrations();
+  }
+
   // ── OAuth callback URL check ──────────────────────────────────────────────
   // getCallbackUrl() uses OIDC_CALLBACK_URL (priority 1) or REPLIT_DOMAINS
   // (priority 2, runtime-injected by Replit Autoscale). At least one must

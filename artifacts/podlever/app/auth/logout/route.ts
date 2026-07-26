@@ -33,11 +33,16 @@ import { getIronSession } from "iron-session";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { getSessionOptions } from "@/providers/auth";
+import { getCallbackUrl, getSessionOptions } from "@/providers/auth";
 import type { PodLeverSession } from "@/providers/auth";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const response = NextResponse.redirect(new URL("/", request.url));
+  // Behind the Replit Autoscale proxy, request.url is the INTERNAL origin
+  // (e.g. https://0.0.0.0:3000) — redirecting there strands the browser on an
+  // unreachable address. Derive the real public origin the same way the OAuth
+  // callback does: from getCallbackUrl() (OIDC_CALLBACK_URL / REPLIT_DOMAINS).
+  const appOrigin = new URL(getCallbackUrl(request)).origin; // e.g. https://podlever.com
+  const response = NextResponse.redirect(new URL("/", appOrigin));
 
   // ── Step 1: Read the session to get userId before clearing ───────────────────
   const session = await getIronSession<PodLeverSession>(
