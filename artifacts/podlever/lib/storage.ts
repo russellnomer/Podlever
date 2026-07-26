@@ -21,8 +21,38 @@
 import "server-only";
 import { Storage } from "@google-cloud/storage";
 
-/** Singleton GCS client — authenticated via Replit ADC sidecar. */
-const storage = new Storage();
+/**
+ * Replit's local credential/signing service ("sidecar"). Replit-provisioned
+ * buckets are accessed with token-based (external account) credentials served
+ * from this endpoint — there is NO service-account private key available, so
+ * the generic GCS auth/signing paths don't work in Replit deployments.
+ */
+const REPLIT_SIDECAR_ENDPOINT = process.env.REPLIT_SIDECAR_ENDPOINT ?? "http://127.0.0.1:1106";
+
+/** Running on Replit (workspace or deployment)? The sidecar only exists there. */
+const ON_REPLIT = Boolean(process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT);
+
+/**
+ * Singleton GCS client. On Replit: external-account credentials from the
+ * sidecar (the pattern Replit's own object-storage blueprint uses). Elsewhere
+ * (local dev/CI): plain ADC.
+ */
+const storage = ON_REPLIT
+  ? new Storage({
+      credentials: {
+        audience: "replit",
+        subject_token_type: "access_token",
+        token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+        type: "external_account",
+        credential_source: {
+          url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+          format: { type: "json", subject_token_field_name: "access_token" },
+        },
+        universe_domain: "googleapis.com",
+      },
+      projectId: "",
+    })
+  : new Storage();
 
 /** Returns the provisioned GCS bucket. Throws if env var is missing. */
 function getBucket() {
@@ -176,6 +206,30 @@ export async function getSignedUploadUrl(
   expiresMs = 30 * 60 * 1000,
 ): Promise<string> {
   const bucket = getBucket();
+
+  // On Replit, URL signing MUST go through the sidecar: the token-based
+  // credentials have no private key, so the GCS client's V4 signing produces
+  // signatures Google rejects with 403. The sidecar signs on Replit's side.
+  if (ON_REPLIT) {
+    const response = await fetch(`${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bucket_name: bucket.name,
+        object_name: storageKey,
+        method:      "PUT",
+        expires_at:  new Date(Date.now() + expiresMs).toISOString(),
+      }),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Failed to sign upload URL (sidecar ${response.status}): ${detail.slice(0, 200)}`);
+    }
+    const { signed_url: signedUrl } = (await response.json()) as { signed_url?: string };
+    if (!signedUrl) throw new Error("Sidecar returned no signed_url");
+    return signedUrl;
+  }
+
   const [url] = await bucket.file(storageKey).getSignedUrl({
     version:     "v4",
     action:      "write",
