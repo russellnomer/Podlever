@@ -22,7 +22,7 @@
 
 import { useRef, useState, useTransition }  from "react";
 import { useRouter }                        from "next/navigation";
-import { uploadEpisodeAction, finalizeDirectUploadAction } from "@/app/actions/episode.actions";
+import { uploadEpisodeAction, finalizeDirectUploadAction, getSignedUploadUrlAction } from "@/app/actions/episode.actions";
 import { Mic, Upload, Loader2, AlertCircle, Film } from "lucide-react";
 
 /** Max direct-upload size (matches /api/uploads/sign). */
@@ -132,16 +132,16 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly
     setError(null);
 
     try {
-      // ── 1. Get a signed URL ─────────────────────────────────────────────
+      // ── 1. Get a signed URL (Server Action — /api is owned by a separate
+      //       Express server in prod, so a Next.js /api route can't be used) ─
       setPhase("uploading");
       setProgress(0);
-      const signRes = await fetch("/api/uploads/sign", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ filename: file.name, contentType: file.type || "application/octet-stream", sizeBytes: file.size }),
+      const sign = await getSignedUploadUrlAction({
+        filename:    file.name,
+        contentType: file.type || "application/octet-stream",
+        sizeBytes:   file.size,
       });
-      const sign = await signRes.json();
-      if (!signRes.ok) throw new Error(sign.error ?? "Could not prepare the upload.");
+      if (!sign.ok) throw new Error(sign.error);
 
       // ── 2. PUT the file straight to cloud storage ───────────────────────
       let storageKey: string | null = sign.storageKey;
