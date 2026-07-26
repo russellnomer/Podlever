@@ -205,6 +205,18 @@ export default async function DashboardPage({
           </div>
           <div className="flex items-center gap-2">
             <Link
+              href="/admin"
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-xs font-semibold transition-colors"
+            >
+              Admin console
+            </Link>
+            <Link
+              href="/dashboard/episodes"
+              className="px-3 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 text-xs transition-colors"
+            >
+              My episodes
+            </Link>
+            <Link
               href="/"
               className="px-3 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 text-xs transition-colors"
             >

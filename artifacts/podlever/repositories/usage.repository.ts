@@ -50,6 +50,18 @@ export interface UsageSummary {
    * The upload gate and UI copy should reflect "trial used" not "monthly limit".
    */
   isTrialOnly: boolean;
+  /**
+   * True when the owner has suspended this user (users.suspended_at set).
+   * Suspended users are always atLimit with limit 0 — UI should show a
+   * "access suspended" message instead of the usual limit copy.
+   */
+  suspended?: boolean;
+  /**
+   * True when the user's admin-set access window has expired
+   * (users.access_expires_at is in the past). Treated like suspension by
+   * the upload gate; UI should show "demo access expired".
+   */
+  accessExpired?: boolean;
 }
 
 /**
@@ -123,9 +135,14 @@ class UsageRepository {
    * @returns UsageSummary with used count, tier limit, and atLimit flag
    */
   async getUsageSummary(userId: string): Promise<UsageSummary> {
-    // ── Resolve the user's plan ─────────────────────────────────────────────
+    // ── Resolve the user's plan + admin access controls ─────────────────────
     const [userRow] = await db
-      .select({ plan: users.plan })
+      .select({
+        plan:               users.plan,
+        episodeCapOverride: users.episodeCapOverride,
+        accessExpiresAt:    users.accessExpiresAt,
+        suspendedAt:        users.suspendedAt,
+      })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
@@ -136,6 +153,28 @@ class UsageRepository {
     // ── Compute period start (UTC midnight on the 1st of this month) ────────
     const now         = new Date();
     const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+    // ── Admin gates: suspension and access expiry take precedence ───────────
+    // A suspended or expired user is always at-limit with limit 0, regardless
+    // of plan or cap override. Set/cleared by the owner via /admin/users.
+    const suspended     = userRow?.suspendedAt != null;
+    const accessExpired =
+      userRow?.accessExpiresAt != null && userRow.accessExpiresAt < now;
+
+    if (suspended || accessExpired) {
+      const used = await this.getTotalEpisodesEver(userId);
+      return {
+        used,
+        limit:       0,
+        periodStart,
+        plan,
+        tierLabel:   tier.label,
+        atLimit:     true,
+        isTrialOnly: false,
+        suspended,
+        accessExpired,
+      };
+    }
 
     if (tier.isTrialOnly) {
       // ── Trial tier: gate on lifetime count, not monthly ───────────────────
@@ -166,7 +205,8 @@ class UsageRepository {
       );
 
     const used  = row?.total ?? 0;
-    const limit = tier.episodesPerMonth;
+    // Admin-set per-user cap override (deal registration) beats the tier default.
+    const limit = userRow?.episodeCapOverride ?? tier.episodesPerMonth;
 
     return {
       used,

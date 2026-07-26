@@ -9,17 +9,20 @@
  * Uses iron-session to decrypt the session cookie and read auth state without
  * hitting the database (the session already embeds role + betaAccess at login time).
  *
- * Access rules:
+ * Access rules (updated 2026-07-26 — self-serve free trial opened):
  *   PUBLIC paths   → always allowed (no auth required)
  *   /auth/*        → always allowed (login/callback/logout)
- *   /verify-access → allowed for authenticated non-owner users only
+ *   /verify-access → allowed for authenticated users (claim a beta invite)
  *   /waitlisted    → always allowed (holding page)
  *   /onboarding    → allowed for invited + active users (and owner)
- *   /dashboard/*   → owner always; non-owner only if betaAccess === "active"
- *   /dashboard/episodes/* → same as above
+ *   /dashboard     → owner CRM; non-owners are redirected to /dashboard/episodes
+ *   /dashboard/episodes/* → any authenticated user (free trial or beta)
  *
  * For non-owner users without a session: redirect to /auth/login.
- * For authenticated non-owner users with no betaAccess: redirect to /verify-access.
+ * For authenticated users with no betaAccess claim: allowed into the product on
+ *   the FREE TRIAL plan (users.plan defaults to "free" — 1 lifetime episode,
+ *   60-minute cap, enforced at the upload gate). Matches the public pricing
+ *   promise; abuse is bounded by the trial cap and the /admin/users controls.
  * For invited (not yet active) non-owner users: redirect to /onboarding.
  *
  * SECURITY NOTES:
@@ -126,13 +129,8 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return NextResponse.next();
   }
 
-  // ── Non-owner: check beta access ──────────────────────────────────────────
+  // ── Non-owner: route into the product ─────────────────────────────────────
   const { betaAccess } = session;
-
-  if (!betaAccess) {
-    // Authenticated but not on the invite list → self-declaration page
-    return NextResponse.redirect(new URL("/verify-access", request.url));
-  }
 
   if (betaAccess === "invited") {
     // Invited but not yet onboarded — funnel to onboarding
@@ -142,7 +140,18 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return NextResponse.next();
   }
 
-  // betaAccess === "active" → full product access
+  // The /dashboard root is the owner CRM — non-owners get the product home.
+  // (The page itself also rejects non-owners; this just gives them a sane
+  // landing instead of a bounce to the marketing site.)
+  if (pathname === "/dashboard") {
+    return NextResponse.redirect(new URL("/dashboard/episodes", request.url));
+  }
+
+  // No betaAccess claim → self-serve FREE TRIAL access (plan="free" by default:
+  // 1 lifetime episode, 60-minute cap, enforced at the upload gate in the DB).
+  // This matches the public pricing page promise ("Get started free — no card").
+  // Invited beta users still claim Pro-equivalent access via /verify-access.
+  // betaAccess === "active" → full beta product access.
   return NextResponse.next();
 }
 

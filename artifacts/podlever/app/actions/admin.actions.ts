@@ -14,10 +14,14 @@
 
 "use server";
 
+import { z }                      from "zod";
+import { eq }                     from "drizzle-orm";
 import { redirect }               from "next/navigation";
 import { getAuthUser }            from "@/providers/auth";
 import { requireOwnerFromSession } from "@/providers/owner-guard";
 import { waitlistRepository }     from "@/repositories";
+import { db }                     from "@/db";
+import { waitlist }               from "@/db/schema";
 
 // ─── inviteWaitlistEntryAction ────────────────────────────────────────────────
 
@@ -56,4 +60,80 @@ export async function inviteWaitlistEntryAction(formData: FormData): Promise<nev
   }
 
   redirect("/admin/waitlist");
+}
+
+// ─── directInviteByEmailAction ────────────────────────────────────────────────
+
+/**
+ * directInviteByEmailAction — Owner invites an email address directly.
+ *
+ * Unlike inviteWaitlistEntryAction (which promotes an existing waitlist row),
+ * this creates the row if needed and marks it "invited" in one step — so the
+ * owner can invite anyone from /admin/waitlist without waiting for them to
+ * request access first.
+ *
+ * FormData fields:
+ *   email: string — the address to invite
+ *
+ * Behavior:
+ *   - New email                    → insert with status "invited", source "owner_direct"
+ *   - Existing entry (any status
+ *     except active/converted)     → status set to "invited"
+ *   - Already active/converted     → no-op (?error=already_active)
+ *
+ * No email is sent automatically (email service not configured). The page
+ * shows a pre-written invite the owner can send with one click via their
+ * own mail client.
+ */
+export async function directInviteByEmailAction(formData: FormData): Promise<never> {
+  const auth = await getAuthUser();
+  if (!auth) redirect("/auth/login");
+  await requireOwnerFromSession(auth);
+
+  const raw = formData.get("email");
+  const parsed = z
+    .string()
+    .email()
+    .max(320)
+    .transform((v) => v.toLowerCase().trim())
+    .safeParse(raw);
+  if (!parsed.success) {
+    redirect("/admin/waitlist?error=invalid_email");
+  }
+  const email = parsed.data;
+
+  try {
+    const [existing] = await db
+      .select({ id: waitlist.id, status: waitlist.status })
+      .from(waitlist)
+      .where(eq(waitlist.email, email))
+      .limit(1);
+
+    if (existing) {
+      if (existing.status === "active" || existing.status === "converted") {
+        redirect("/admin/waitlist?error=already_active");
+      }
+      await waitlistRepository.markLeadInvited(existing.id);
+    } else {
+      await db.insert(waitlist).values({
+        email,
+        source: "owner_direct",
+        status: "invited",
+      });
+    }
+
+    console.log(JSON.stringify({
+      event:     "admin.waitlist.direct_invited",
+      invitedBy: auth.replitUserId,
+      ts:        new Date().toISOString(),
+      // email intentionally not logged (PII)
+    }));
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes("NEXT_REDIRECT")) throw err;
+    console.error("[directInviteByEmailAction] failed:", msg);
+    redirect("/admin/waitlist?error=invite_failed");
+  }
+
+  redirect("/admin/waitlist?message=direct_invited");
 }

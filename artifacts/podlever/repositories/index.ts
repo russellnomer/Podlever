@@ -39,3 +39,8 @@ export {
   type UsageSummary,
   type UserUsageSummary,
 } from "./usage.repository";
+
+export {
+  adminUsersRepository,
+  type AdminUserOverview,
+} from "./admin-users.repository";
