@@ -96,6 +96,22 @@ function isAuthPath(pathname: string): boolean {
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
+  // ── Canonical host: redirect www.* → apex ─────────────────────────────────
+  // Auth cookies (PKCE state, session) are host-only. If a user signs in from
+  // www.podlever.com while the OIDC callback returns to podlever.com, the
+  // cookie set before the redirect is invisible on the way back → infinite
+  // "Allow" loop at Replit's consent screen (owner hit this on 2026-07-26).
+  // Redirecting every www request to the apex domain guarantees one cookie
+  // host. Also the correct SEO canonicalization.
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
+  if (host.toLowerCase().startsWith("www.")) {
+    const canonical = new URL(request.url);
+    canonical.host = host.slice(4);
+    canonical.protocol = "https:";
+    canonical.port = "";
+    return NextResponse.redirect(canonical, 308);
+  }
+
   // ── Always allow static + public pages ────────────────────────────────────
   if (isPublicPath(pathname) || isAuthPath(pathname)) {
     const res = NextResponse.next();
