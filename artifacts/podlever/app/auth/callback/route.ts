@@ -66,6 +66,26 @@ import {
 import type { PodLeverSession, PkceState } from "@/providers/auth";
 import { trackServerEvent } from "@/lib/analytics";
 
+/**
+ * authErrorRedirect — send the user to the visible /auth/error page instead of
+ * silently bouncing back to /auth/login.
+ *
+ * Before 2026-07-26 every callback failure redirected straight to /auth/login,
+ * which immediately re-initiated OIDC → the user experienced an INFINITE
+ * consent loop with zero visible explanation (only server logs knew why).
+ * Now the loop breaks at a human-readable error page that shows the failure
+ * code + detail, so the user can screenshot it and retry deliberately.
+ *
+ * `detail` is truncated and passed in the URL — error messages from our own
+ * auth stack (oidc-client / iron-session / drizzle) contain no secrets.
+ */
+function authErrorRedirect(appOrigin: string, code: string, detail: string): NextResponse {
+  const url = new URL("/auth/error", appOrigin);
+  url.searchParams.set("code", code);
+  url.searchParams.set("detail", detail.slice(0, 300));
+  return NextResponse.redirect(url);
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Derive the canonical public origin from proxy headers.
   // In Replit Autoscale, request.url is an internal address (http://localhost:PORT).
@@ -90,7 +110,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       "[auth/callback] PKCE cookie decrypt failed — possible tampering, expiry, or secret mismatch:",
       (err as Error).message,
     );
-    return NextResponse.redirect(new URL("/auth/login", appOrigin));
+    return authErrorRedirect(appOrigin, "pkce_decrypt", (err as Error).message);
   }
 
   if (!pkceSession.codeVerifier || !pkceSession.state || !pkceSession.nonce) {
@@ -103,7 +123,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // or the cookie was not sent (domain/path mismatch). NOT a session-store issue —
       // iron-session is stateless/cookie-based and works across all Autoscale instances.
     });
-    return NextResponse.redirect(new URL("/auth/login", appOrigin));
+    return authErrorRedirect(
+      appOrigin,
+      "pkce_missing",
+      `verifier=${!!pkceSession.codeVerifier} state=${!!pkceSession.state} nonce=${!!pkceSession.nonce}`,
+    );
   }
 
   const { codeVerifier, state, nonce, nextUrl } = pkceSession;
@@ -138,7 +162,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       "[auth/callback] Token exchange failed (invalid_grant, PKCE mismatch, or network error):",
       (err as Error).message,
     );
-    return NextResponse.redirect(new URL("/auth/login", appOrigin));
+    return authErrorRedirect(appOrigin, "token_exchange", (err as Error).message);
   }
 
   // ── Step 3: Extract identity from validated claims ────────────────────────────
@@ -214,7 +238,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   } catch (err) {
     console.error("[auth/callback] User upsert failed:", (err as Error).message);
-    return NextResponse.redirect(new URL("/auth/login?error=db", appOrigin));
+    return authErrorRedirect(appOrigin, "db", (err as Error).message);
   }
 
   // ── Step 6: Emit structured security audit log ────────────────────────────────
@@ -285,7 +309,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     await session.save();
   } catch (err) {
     console.error("[auth/callback] Session write failed:", (err as Error).message);
-    return NextResponse.redirect(new URL("/auth/login?error=session", appOrigin));
+    return authErrorRedirect(appOrigin, "session", (err as Error).message);
   }
 
   // ── Step 9: Clear the ephemeral PKCE cookie ───────────────────────────────────
