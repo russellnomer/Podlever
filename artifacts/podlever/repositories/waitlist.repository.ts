@@ -454,6 +454,20 @@ export class WaitlistRepository {
     if (!updated) throw new Error(`Waitlist entry ${id} not found`);
     return updated;
   }
+
+  /**
+   * deleteEntry — Permanently remove a waitlist entry (owner cleanup).
+   *
+   * Does NOT touch any users row: if the entry was already claimed by an
+   * account, that account keeps whatever plan it has — manage it from
+   * /admin/users instead. Deleting an *invited but unclaimed* entry
+   * effectively revokes the invite (claim lookups match by email + status).
+   *
+   * @param id - UUID of the waitlist entry to delete
+   */
+  async deleteEntry(id: string): Promise<void> {
+    await db.delete(waitlist).where(eq(waitlist.id, id));
+  }
 }
 
 // ─── Singleton ────────────────────────────────────────────────────────────────
