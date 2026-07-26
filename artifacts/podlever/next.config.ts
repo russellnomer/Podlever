@@ -21,7 +21,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Experimental: enable React 19 features and Server Components
-  experimental: {},
+  experimental: {
+    // Server Actions default to a 1MB request body, which rejects real audio
+    // uploads. The pipeline action (app/actions/pipeline.actions.ts) enforces a
+    // 25MB app-level cap; keep this slightly higher so the framework doesn't
+    // reject the body before our own validation can return a friendly message.
+    serverActions: {
+      bodySizeLimit: "30mb",
+    },
+  },
 
   // TypeScript and ESLint: fail builds on errors (default in Next.js 15)
   typescript: {

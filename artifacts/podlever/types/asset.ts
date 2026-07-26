@@ -51,6 +51,7 @@ export const CreateAssetVersionSchema = z.object({
   assetType:   AssetTypeSchema,
   label:       z.string().trim().max(255).optional(),
   storageKey:  z.string().max(1024).optional(), // nullable in Phase 1A
+  content:     z.string().optional(),           // inline text payload (Phase 1B text assets)
 });
 
 // ─── Inferred types ───────────────────────────────────────────────────────────

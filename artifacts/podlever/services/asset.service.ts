@@ -54,6 +54,7 @@ export class AssetService {
       assetType:  input.assetType,
       label:      input.label ?? null,
       storageKey: input.storageKey ?? null,
+      content:    input.content ?? null,
       // status defaults to "draft" (set in schema)
     });
   }

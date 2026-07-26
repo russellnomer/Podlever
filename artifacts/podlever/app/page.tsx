@@ -25,6 +25,7 @@
 import Link from "next/link";
 import { getAuthUser } from "@/providers/auth";
 import { episodeRepository } from "@/repositories";
+import { StudioUploader } from "@/app/components/StudioUploader";
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
@@ -195,10 +196,12 @@ function OwnerDashboard({
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
           <p className="text-zinc-400 text-sm">
             Welcome back, <span className="text-white font-semibold">{displayName}</span>.
-            The Phase 1A foundation is complete and verified. Phase 1B (processing pipeline)
-            begins after Task #3 and #4 are resolved.
+            Upload a recording below to generate your show notes and social pack.
           </p>
         </div>
+
+        {/* Studio — the live pipeline */}
+        <StudioUploader />
 
         {/* Verification checks */}
         <div className="space-y-3">

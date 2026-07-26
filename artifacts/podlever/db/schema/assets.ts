@@ -118,6 +118,19 @@ export const assets = pgTable("assets", {
   storageKey: text("storage_key"),
 
   /**
+   * Inline text payload for text-native assets (transcript, show_notes,
+   * blog_post, social_post). Nullable — binary assets (cleaned_audio,
+   * youtube_cut, vertical_clip) carry their payload in object storage via
+   * `storageKey` and leave this null.
+   *
+   * Added Phase 1B alongside the transcription/writing pipeline so generated
+   * text can be persisted and reviewed without a separate object-store fetch.
+   * Requires a non-destructive migration (ADD COLUMN content text) — run
+   * `pnpm --filter @workspace/db run push` after deploying.
+   */
+  content: text("content"),
+
+  /**
    * Human-readable label or description of this asset version.
    * Optional. Used to distinguish draft revisions ("v2 with intro trimmed").
    */

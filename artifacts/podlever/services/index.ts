@@ -8,3 +8,4 @@
 
 export { EpisodeService, episodeService } from "./episode.service";
 export { AssetService, assetService } from "./asset.service";
+export { PipelineService, pipelineService, PipelineError } from "./pipeline.service";

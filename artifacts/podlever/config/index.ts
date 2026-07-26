@@ -46,6 +46,23 @@ const EnvSchema = z.object({
     .string()
     .min(1, "DATABASE_URL is required — provision via Replit PostgreSQL"),
 
+  // ─── AI Providers (pipeline engine) ────────────────────────────────────────
+  /**
+   * Deepgram API key — transcription (Nova-3). Set via Replit Secrets.
+   * Required for the transcription pipeline step.
+   */
+  DEEPGRAM_API_KEY: z
+    .string()
+    .min(1, "DEEPGRAM_API_KEY is required — set via Replit Secrets"),
+
+  /**
+   * Anthropic API key — writing (Claude Sonnet 4.5). Set via Replit Secrets.
+   * Required for show-notes / blog / social generation steps.
+   */
+  ANTHROPIC_API_KEY: z
+    .string()
+    .min(1, "ANTHROPIC_API_KEY is required — set via Replit Secrets"),
+
   // ─── Session / Security ────────────────────────────────────────────────────
   /**
    * Secret for encrypting iron-session cookies (AES-256-GCM via iron-session).
