@@ -26,7 +26,8 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server";
-import { claimNextJob, completeJob, failJob } from "@/lib/job-queue";
+import { claimNextJob, completeJob, failJob, hasClaimableJob, kickWorker } from "@/lib/job-queue";
+import { after } from "next/server";
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await completeJob(job.id);
 
+    // Chain: if more jobs are waiting in line, trigger the next cycle so the
+    // queue drains without waiting for another external kick.
+    if (await hasClaimableJob()) {
+      after(async () => { await kickWorker(); });
+    }
+
     console.log(JSON.stringify({ event: "worker.job_complete", jobId: job.id }));
     return NextResponse.json({ ok: true, jobId: job.id, jobType: job.jobType });
 
@@ -105,6 +112,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const message = err instanceof Error ? err.message : String(err);
 
     await failJob(job.id, message);
+
+    // If this was the final attempt, surface the failure on the episode row —
+    // otherwise the UI shows an eternal spinner with no explanation.
+    if (job.jobType === "process_episode" && job.attempts >= job.maxAttempts) {
+      const episodeId = (job.payload as Record<string, unknown>)["episodeId"] as string | undefined;
+      if (episodeId) {
+        const { episodeRepository } = await import("@/repositories");
+        await episodeRepository.setProcessingError(
+          episodeId,
+          `Processing failed after ${job.attempts} attempts: ${message.slice(0, 400)}`,
+        );
+      }
+    }
 
     console.error(JSON.stringify({
       event:   "worker.job_failed",

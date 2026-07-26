@@ -33,6 +33,14 @@ const nextConfig: NextConfig = {
     "*.repl.co",
   ],
 
+  // Bundled ffmpeg/ffprobe static binaries: these packages resolve absolute
+  // paths to real executables at runtime and must NOT be inlined by webpack
+  // (it would try to parse the binaries/README as modules and break the build).
+  serverExternalPackages: [
+    "@ffmpeg-installer/ffmpeg",
+    "@ffprobe-installer/ffprobe",
+  ],
+
   experimental: {
     // Allow Server Actions to receive audio file uploads up to 50MB.
     // Podcast episodes for beta are capped at 25MB (OpenAI Whisper limit)

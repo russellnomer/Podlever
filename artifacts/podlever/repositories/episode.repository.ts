@@ -313,6 +313,39 @@ export class EpisodeRepository {
   }
 
   /**
+   * setProcessingStage — Update the live pipeline-stage marker (telemetry).
+   *
+   * NOT part of the FSM — this is display-only progress information for the
+   * assembly-line stepper. Pass null when processing finishes or fails.
+   * Best-effort: never throws (a stage update must never kill the pipeline).
+   */
+  async setProcessingStage(episodeId: string, stage: string | null): Promise<void> {
+    try {
+      await db
+        .update(episodes)
+        .set({ processingStage: stage })
+        .where(eq(episodes.id, episodeId));
+    } catch (err) {
+      console.warn(JSON.stringify({ event: "episode.stage.update_failed", episodeId, stage, error: String(err) }));
+    }
+  }
+
+  /**
+   * setProcessingError — Record (or clear, with null) the most recent
+   * processing failure message. Best-effort like setProcessingStage.
+   */
+  async setProcessingError(episodeId: string, error: string | null): Promise<void> {
+    try {
+      await db
+        .update(episodes)
+        .set({ processingError: error })
+        .where(eq(episodes.id, episodeId));
+    } catch (err) {
+      console.warn(JSON.stringify({ event: "episode.error.update_failed", episodeId, error: String(err) }));
+    }
+  }
+
+  /**
    * listAllEpisodes — Fetch all non-archived episodes across all owners.
    *
    * ADMIN USE ONLY — owner dashboard overview. Never expose to regular users.
