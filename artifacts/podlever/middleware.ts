@@ -62,6 +62,7 @@ function getMiddlewareSessionOptions() {
 const PUBLIC_PREFIXES = [
   "/",
   "/pricing",
+  "/help",
   "/privacy",
   "/terms",
   "/sitemap.xml",

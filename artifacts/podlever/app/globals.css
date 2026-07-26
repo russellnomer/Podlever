@@ -17,6 +17,15 @@
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
     --radius: 0.5rem;
+    /* PodLever is a light-themed app. Without this, browsers in OS dark mode
+       apply dark UA defaults to form controls — typed text became white on
+       the white inputs (reported by owner 2026-07-26). */
+    color-scheme: light;
+  }
+
+  input, textarea, select {
+    color: #111827;            /* gray-900 — always legible on white fields */
+    background-color: #ffffff;
   }
 
   .dark {

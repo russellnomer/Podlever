@@ -109,6 +109,10 @@ export async function directInviteByEmailAction(formData: FormData): Promise<nev
   }
   const email = parsed.data;
 
+  // Optional first name for a personal greeting in the invite email.
+  const rawName   = formData.get("name");
+  const firstName = typeof rawName === "string" ? rawName.trim().slice(0, 80) : "";
+
   try {
     const [existing] = await db
       .select({ id: waitlist.id, status: waitlist.status })
@@ -131,7 +135,7 @@ export async function directInviteByEmailAction(formData: FormData): Promise<nev
 
     // Auto-send when SMTP is configured (Google Workspace App Password);
     // otherwise the owner uses the "Send invite email" mailto button.
-    if (isEmailConfigured() && (await sendInviteEmail(email))) {
+    if (isEmailConfigured() && (await sendInviteEmail(email, firstName || undefined))) {
       redirect("/admin/waitlist?message=invited_emailed");
     }
 

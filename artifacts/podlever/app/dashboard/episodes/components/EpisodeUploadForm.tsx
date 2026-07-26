@@ -3,25 +3,40 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #2 — Episode processing pipeline)
+ * Last modified: 2026-07-26 by agent (direct-to-GCS uploads — remove 25 MB wall)
  *
- * Renders a form with title + audio file inputs. On submit it calls the
- * uploadEpisodeAction Server Action with a FormData payload. Shows loading
- * state and validation errors inline — no page reload until redirect.
+ * Upload flow (direct-to-cloud, no server body limits):
+ *   1. Client validates type/size (audio or video, ≤300 MB)
+ *   2. POST /api/uploads/sign → signed GCS PUT URL + HMAC token
+ *   3. XHR PUT straight to GCS with a real progress bar
+ *   4. finalizeDirectUploadAction creates the episode + triggers processing
  *
- * File constraints enforced both client-side (fast UX) and server-side (security):
- *   - Max size: 25 MB (OpenAI Whisper hard limit)
- *   - Accepted types: MP3, M4A, WAV, OGG, FLAC
+ * If the direct PUT fails (e.g. blocked network) and the file is ≤25 MB, we
+ * fall back to the legacy server-action upload so small files always work.
+ *
+ * Errors are returned (not thrown) by the finalize action, so users see the
+ * real reason instead of Next.js's masked production error.
  */
 
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { uploadEpisodeAction }             from "@/app/actions/episode.actions";
-import { Mic, Upload, Loader2, AlertCircle } from "lucide-react";
+import { useRef, useState, useTransition }  from "react";
+import { useRouter }                        from "next/navigation";
+import { uploadEpisodeAction, finalizeDirectUploadAction } from "@/app/actions/episode.actions";
+import { Mic, Upload, Loader2, AlertCircle, Film } from "lucide-react";
 
-/** Max file size shown in error messages (matches server-side constant). */
-const MAX_MB = 25;
+/** Max direct-upload size (matches /api/uploads/sign). */
+const MAX_MB = 300;
+
+/** Legacy server-action path cap (used only as a fallback). */
+const LEGACY_MAX_MB = 25;
+
+const ACCEPT =
+  "audio/mp3,audio/mpeg,audio/mp4,audio/m4a,audio/wav,audio/ogg,audio/flac," +
+  "video/mp4,video/quicktime,video/webm," +
+  ".mp3,.m4a,.wav,.ogg,.flac,.mp4,.mov,.webm,.m4v";
+
+const ALLOWED_EXT = /\.(mp3|m4a|wav|ogg|flac|mp4|mov|webm|m4v|mpeg|mpg)$/i;
 
 interface EpisodeUploadFormProps {
   /** When true, shows a plan-limit reached message instead of the upload form. */
@@ -39,14 +54,41 @@ interface EpisodeUploadFormProps {
   isTrialOnly?: boolean;
 }
 
-export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly }: EpisodeUploadFormProps) {
-  if (atLimit) {
-    // Two distinct gate messages depending on whether the plan is a one-time trial
-    // or a recurring monthly subscription.
-    const headline = isTrialOnly
-      ? "Free trial used"
-      : "Monthly limit reached";
+/** XHR PUT with progress callback (fetch has no upload progress). */
+function putWithProgress(
+  url: string,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload  = () => (xhr.status >= 200 && xhr.status < 300)
+      ? resolve()
+      : reject(new Error(`Storage upload failed (HTTP ${xhr.status})`));
+    xhr.onerror = () => reject(new Error("Storage upload failed (network/CORS)"));
+    xhr.send(file);
+  });
+}
 
+export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly }: EpisodeUploadFormProps) {
+  const router                        = useRouter();
+  const fileRef                       = useRef<HTMLInputElement>(null);
+  const [error, setError]             = useState<string | null>(null);
+  const [file, setFile]               = useState<File | null>(null);
+  const [title, setTitle]             = useState("");
+  const [progress, setProgress]       = useState<number | null>(null);
+  const [phase, setPhase]             = useState<"idle" | "uploading" | "finalizing">("idle");
+  const [isPending, startTransition]  = useTransition();
+
+  const busy = phase !== "idle" || isPending;
+
+  if (atLimit) {
+    const headline = isTrialOnly ? "Free trial used" : "Monthly limit reached";
     const detail = isTrialOnly
       ? "Your free trial episode has been used. Upgrade to keep processing episodes."
       : `You've used ${used ?? 0}/${limit ?? 1} episodes on the ${planLabel ?? "Free"} plan this month.`;
@@ -57,12 +99,8 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly
           <span className="text-2xl">🔒</span>
         </div>
         <div>
-          <p className="text-base font-semibold text-gray-900 mb-1">
-            {headline}
-          </p>
-          <p className="text-sm text-gray-500">
-            {detail}
-          </p>
+          <p className="text-base font-semibold text-gray-900 mb-1">{headline}</p>
+          <p className="text-sm text-gray-500">{detail}</p>
         </div>
         <a
           href="/pricing"
@@ -74,45 +112,86 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly
       </div>
     );
   }
-  const formRef             = useRef<HTMLFormElement>(null);
-  const [error, setError]   = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   /** Client-side file validation before hitting the server. */
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) { setFileName(null); return; }
-    setFileName(file.name);
+    const f = e.target.files?.[0];
+    if (!f) { setFile(null); return; }
+    setFile(f);
     setError(null);
-    if (file.size > MAX_MB * 1024 * 1024) {
-      setError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_MB} MB.`);
+    if (!ALLOWED_EXT.test(f.name)) {
+      setError("Unsupported format. Use MP3, M4A, WAV, OGG, FLAC — or video: MP4, MOV, WEBM.");
+    } else if (f.size > MAX_MB * 1024 * 1024) {
+      setError(`File is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_MB} MB.`);
     }
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!file || busy) return;
     setError(null);
-    const fd = new FormData(formRef.current!);
-    startTransition(async () => {
+
+    try {
+      // ── 1. Get a signed URL ─────────────────────────────────────────────
+      setPhase("uploading");
+      setProgress(0);
+      const signRes = await fetch("/api/uploads/sign", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ filename: file.name, contentType: file.type || "application/octet-stream", sizeBytes: file.size }),
+      });
+      const sign = await signRes.json();
+      if (!signRes.ok) throw new Error(sign.error ?? "Could not prepare the upload.");
+
+      // ── 2. PUT the file straight to cloud storage ───────────────────────
+      let storageKey: string | null = sign.storageKey;
+      let token: string | null      = sign.token;
       try {
-        await uploadEpisodeAction(fd);
-      } catch (err) {
-        // next/navigation redirect throws — ignore it (redirect in flight)
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("NEXT_REDIRECT")) {
-          setError(msg);
+        await putWithProgress(sign.uploadUrl, file, setProgress);
+      } catch (putErr) {
+        // Fallback: small files can still go through the server action.
+        if (file.size <= LEGACY_MAX_MB * 1024 * 1024) {
+          storageKey = null;
+          token      = null;
+        } else {
+          throw putErr;
         }
       }
-    });
+
+      // ── 3. Finalize (create episode + start processing) ─────────────────
+      setPhase("finalizing");
+      if (storageKey && token) {
+        const fd = new FormData();
+        fd.set("title", title);
+        fd.set("storageKey", storageKey);
+        fd.set("token", token);
+        fd.set("filename", file.name);
+        const result = await finalizeDirectUploadAction(fd);
+        if (!result.ok) throw new Error(result.error);
+        startTransition(() => router.push(`/dashboard/episodes/${result.episodeId}`));
+      } else {
+        // Legacy path (small files only)
+        const fd = new FormData();
+        fd.set("title", title);
+        fd.set("audio", file);
+        try {
+          await uploadEpisodeAction(fd);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes("NEXT_REDIRECT")) throw err;
+        }
+      }
+    } catch (err) {
+      setPhase("idle");
+      setProgress(null);
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
+  const isVideoFile = file ? /\.(mp4|mov|webm|m4v|mpeg|mpg)$/i.test(file.name) : false;
+
   return (
-    <form
-      ref={formRef}
-      onSubmit={handleSubmit}
-      className="space-y-6"
-    >
+    <form onSubmit={handleSubmit} className="space-y-6">
       {/* Title */}
       <div>
         <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
@@ -124,56 +203,82 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly
           type="text"
           required
           maxLength={255}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Ep 47 — Building in public with Jane Smith"
-          disabled={isPending}
+          disabled={busy}
           className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm shadow-sm
-                     placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none
-                     focus:ring-2 focus:ring-indigo-500/20 disabled:bg-gray-50 disabled:text-gray-400"
+                     text-gray-900 bg-white placeholder:text-gray-400 focus:border-indigo-500
+                     focus:outline-none focus:ring-2 focus:ring-indigo-500/20
+                     disabled:bg-gray-50 disabled:text-gray-400"
         />
       </div>
 
-      {/* Audio file */}
+      {/* Media file */}
       <div>
         <label htmlFor="audio" className="block text-sm font-medium text-gray-700 mb-1">
-          Audio file <span className="text-red-500">*</span>
-          <span className="ml-2 font-normal text-gray-400">MP3, M4A, WAV, OGG, FLAC — max {MAX_MB} MB</span>
+          Audio or video file <span className="text-red-500">*</span>
+          <span className="ml-2 font-normal text-gray-400">
+            MP3, M4A, WAV, OGG, FLAC, MP4, MOV, WEBM — max {MAX_MB} MB
+          </span>
         </label>
 
         <label
           htmlFor="audio"
           className={`flex flex-col items-center justify-center w-full h-36 rounded-xl border-2
                       border-dashed transition-colors cursor-pointer
-                      ${fileName
+                      ${file
                         ? "border-indigo-400 bg-indigo-50 text-indigo-700"
                         : "border-gray-300 bg-gray-50 hover:border-indigo-400 hover:bg-indigo-50 text-gray-500"
                       }
-                      ${isPending ? "opacity-50 cursor-not-allowed" : ""}`}
+                      ${busy ? "opacity-50 cursor-not-allowed" : ""}`}
         >
-          {fileName ? (
+          {file ? (
             <>
-              <Mic className="w-7 h-7 mb-2 text-indigo-500" />
-              <span className="text-sm font-medium truncate max-w-xs px-4">{fileName}</span>
-              <span className="text-xs text-indigo-500 mt-1">Click to change</span>
+              {isVideoFile
+                ? <Film className="w-7 h-7 mb-2 text-indigo-500" />
+                : <Mic  className="w-7 h-7 mb-2 text-indigo-500" />}
+              <span className="text-sm font-medium truncate max-w-xs px-4">{file.name}</span>
+              <span className="text-xs text-indigo-500 mt-1">
+                {(file.size / 1024 / 1024).toFixed(1)} MB — click to change
+              </span>
             </>
           ) : (
             <>
               <Upload className="w-7 h-7 mb-2" />
               <span className="text-sm">Click to choose a file</span>
-              <span className="text-xs mt-1">or drag and drop</span>
+              <span className="text-xs mt-1">or drag and drop — video audio is extracted automatically</span>
             </>
           )}
           <input
             id="audio"
+            ref={fileRef}
             name="audio"
             type="file"
-            accept="audio/mp3,audio/mpeg,audio/mp4,audio/m4a,audio/wav,audio/ogg,audio/flac,.mp3,.m4a,.wav,.ogg,.flac"
+            accept={ACCEPT}
             required
-            disabled={isPending}
+            disabled={busy}
             onChange={handleFileChange}
             className="sr-only"
           />
         </label>
       </div>
+
+      {/* Progress bar */}
+      {phase === "uploading" && progress !== null && (
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Uploading to secure storage…</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-gray-200 overflow-hidden">
+            <div
+              className="h-full bg-indigo-600 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -186,16 +291,16 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly
       {/* Submit */}
       <button
         type="submit"
-        disabled={isPending || !!error}
+        disabled={busy || !!error || !file}
         className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3
                    text-sm font-semibold text-white shadow-sm transition-colors
                    hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
                    disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {isPending ? (
+        {busy ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            Uploading…
+            {phase === "uploading" ? "Uploading…" : "Starting processing…"}
           </>
         ) : (
           <>
@@ -205,9 +310,11 @@ export function EpisodeUploadForm({ atLimit, planLabel, used, limit, isTrialOnly
         )}
       </button>
 
-      {isPending && (
+      {busy && (
         <p className="text-center text-xs text-gray-500">
-          Uploading your audio — hang tight, this may take a moment.
+          {phase === "uploading"
+            ? "Your file uploads directly to secure cloud storage — large files may take a few minutes."
+            : "Almost there — creating your episode."}
         </p>
       )}
     </form>
