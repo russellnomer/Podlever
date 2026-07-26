@@ -142,6 +142,35 @@ export const users = pgTable("users", {
    */
   paymentGraceUntil: timestamp("payment_grace_until", { withTimezone: true }),
 
+  /**
+   * Per-user override of the monthly episode cap (admin-set).
+   * Null = use the plan tier's episodesPerMonth from lib/tiers.ts.
+   * Used for demo/deal registration: the owner authorizes a specific
+   * episode allowance for a beta/demo user in advance.
+   */
+  episodeCapOverride: integer("episode_cap_override"),
+
+  /**
+   * UTC timestamp after which this user's access expires (admin-set).
+   * Null = no expiry. When expired, the upload gate treats the user as
+   * at-limit (0 episodes) until the owner extends or clears the date.
+   * Used for time-boxed demo/deal access.
+   */
+  accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+
+  /**
+   * UTC timestamp when the owner suspended this user. Null = not suspended.
+   * A suspended user cannot process episodes (upload gate returns limit 0)
+   * regardless of plan or cap override. Set/cleared via /admin/users.
+   */
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+
+  /**
+   * Owner-entered reason for suspension (audit trail; shown in /admin/users).
+   * Null when not suspended.
+   */
+  suspendedReason: text("suspended_reason"),
+
   /** Row creation timestamp. Set once; never updated. */
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
