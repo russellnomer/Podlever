@@ -233,21 +233,31 @@ export async function requireBetaAccess(
     throw new UnauthorizedError();
   }
 
-  // Gate 2 — must be owner OR active beta user
+  // Gate 2 — any authenticated user may use the product (2026-07-26 change:
+  // self-serve free trial opened — plan-based limits are the entitlement layer,
+  // enforced in the DB via UsageRepository). Beta claim is no longer required.
   const isOwner = user.role === "owner";
-  if (!isOwner && user.betaAccess !== "active") {
-    throw new ForbiddenError(user.role ?? "user");
-  }
 
   // Gate 3 — session version must match the DB (catches stolen/revoked sessions)
+  // and the account must not be suspended by the owner.
   //
   // Same one-row SELECT used by requireOwnerFromSession. Acceptable cost for
   // every privileged request.
   const [dbUser] = await db
-    .select({ sessionVersion: users.sessionVersion, plan: users.plan })
+    .select({
+      sessionVersion: users.sessionVersion,
+      plan:           users.plan,
+      suspendedAt:    users.suspendedAt,
+    })
     .from(users)
     .where(eq(users.id, user.userId))
     .limit(1);
+
+  // Suspended accounts are hard-blocked from every product action (upload,
+  // process, regenerate, export) — not just new episodes. Owner-set via /admin/users.
+  if (!isOwner && dbUser?.suspendedAt != null) {
+    throw new ForbiddenError("suspended");
+  }
 
   if (!dbUser || dbUser.sessionVersion !== user.sessionVersion) {
     console.log(JSON.stringify({

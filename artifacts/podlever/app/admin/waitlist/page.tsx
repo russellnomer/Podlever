@@ -22,8 +22,47 @@ import { getAuthUser }            from "@/providers/auth";
 import { requireOwnerFromSession } from "@/providers/owner-guard";
 import { waitlistRepository }     from "@/repositories";
 import { LEAD_STATUSES }          from "@/db/schema";
-import { inviteWaitlistEntryAction } from "@/app/actions/admin.actions";
-import { Users, ArrowLeft, Mail, CheckCircle, Clock, UserCheck } from "lucide-react";
+import {
+  inviteWaitlistEntryAction,
+  directInviteByEmailAction,
+} from "@/app/actions/admin.actions";
+import { Users, ArrowLeft, Mail, CheckCircle, Clock, UserCheck, Send, UserPlus } from "lucide-react";
+
+// ─── Invite email (professional copy, sent from the owner's mail client) ──────
+
+/**
+ * inviteMailtoHref — Build a mailto: link that opens the owner's mail client
+ * with a fully written, professional invite email addressed to the invitee.
+ * No email service is configured in production, so this one-click compose
+ * is how invites actually get delivered.
+ */
+function inviteMailtoHref(email: string): string {
+  const subject = "Your private beta invitation to PodLever";
+  const body = `Hi,
+
+I'd like to personally invite you to the private beta of PodLever.
+
+PodLever turns a raw podcast recording into a complete, publish-ready content package — full transcript, polished show notes, a blog post, social media posts, and a shareable guest page — in minutes, not hours.
+
+As a beta member you get complimentary Pro-level access (10 episodes per month) at no cost for the duration of the beta.
+
+Getting started takes about two minutes:
+
+  1. Go to https://podlever.com/auth/login
+  2. Sign in with your Replit account (free to create if you don't have one)
+  3. When prompted, enter this email address (${email}) to claim your invite
+  4. Upload your first episode and watch the content package build itself
+
+Beta access is limited and personal to you. Your feedback directly shapes the product — if anything is confusing or falls short, I want to hear about it.
+
+Welcome aboard,
+
+Russell Nomer
+Founder, PodLever
+https://podlever.com`;
+
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 
 // ─── Status display config ────────────────────────────────────────────────────
 
@@ -39,10 +78,26 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default async function AdminWaitlistPage() {
+export default async function AdminWaitlistPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; message?: string }>;
+}) {
   const auth = await getAuthUser();
   if (!auth) redirect("/auth/login");
   requireOwnerFromSession(auth);
+
+  const params = await searchParams;
+  const flashMessages: Record<string, string> = {
+    direct_invited:
+      "Invited! Now click “Send invite email” on their row below — it opens a pre-written email in your mail client.",
+  };
+  const flashErrors: Record<string, string> = {
+    invalid_email:  "That doesn't look like a valid email address.",
+    already_active: "That person already has an active account.",
+    invite_failed:  "Invite failed — check server logs.",
+    missing_id:     "Missing entry ID.",
+  };
 
   // Fetch all entries + status counts in parallel
   const [{ entries, total }, statusCounts] = await Promise.all([
@@ -111,11 +166,45 @@ export default async function AdminWaitlistPage() {
           </div>
         </div>
 
-        {/* Email config notice */}
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <strong>Email notifications are not configured.</strong> When you invite someone,
-          you must manually email them at podlever.com/auth/login and tell them to log in
-          with Replit and enter their email on the verify-access page.
+        {/* Flash messages */}
+        {params.message && flashMessages[params.message] && (
+          <div className="mb-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {flashMessages[params.message]}
+          </div>
+        )}
+        {params.error && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {flashErrors[params.error] ?? "Something went wrong."}
+          </div>
+        )}
+
+        {/* Invite by email */}
+        <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+          <div className="mb-2 flex items-center gap-2 text-indigo-700">
+            <UserPlus className="h-4 w-4" />
+            <h2 className="text-sm font-semibold">Invite someone by email</h2>
+          </div>
+          <form action={directInviteByEmailAction} className="flex gap-2">
+            <input
+              type="email"
+              name="email"
+              required
+              placeholder="name@example.com"
+              className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white
+                         hover:bg-indigo-700 transition-colors"
+            >
+              Invite
+            </button>
+          </form>
+          <p className="mt-2 text-xs text-indigo-700/80">
+            Adds them as invited instantly. Then click <strong>Send invite email</strong> on
+            their row — it opens a professionally written invitation in your mail client,
+            addressed and ready to send.
+          </p>
         </div>
 
         {/* Entries table */}
@@ -193,6 +282,16 @@ export default async function AdminWaitlistPage() {
                               Invite
                             </button>
                           </form>
+                        ) : entry.status === "invited" ? (
+                          <a
+                            href={inviteMailtoHref(entry.email)}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-300
+                                       bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700
+                                       hover:bg-indigo-50 transition-colors"
+                          >
+                            <Send className="h-3 w-3" />
+                            Send invite email
+                          </a>
                         ) : (
                           <span className="text-xs text-gray-400">—</span>
                         )}

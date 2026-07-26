@@ -264,7 +264,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // into the returned response by Next.js — this works correctly even when the
   // response is a redirect (3xx), which is NOT guaranteed with getIronSession(
   // request, response, options) in App Router Route Handlers behind a proxy.
-  const safeNext = nextUrl?.startsWith("/") ? nextUrl : "/dashboard";
+  // Role-aware landing (2026-07-26 — lead-to-cash funnel fix):
+  //   "/dashboard" is the historical generic default that every CTA passed, but
+  //   it renders the owner CRM. Treat it as "no explicit destination" and route
+  //   by role: owner → /admin (console hub), everyone else → /dashboard/episodes
+  //   (the actual product). Explicit deep links other than "/dashboard" are honored.
+  let safeNext = nextUrl?.startsWith("/") ? nextUrl : "/dashboard";
+  if (safeNext === "/dashboard" || safeNext === "/dashboard/") {
+    safeNext = role === "owner" ? "/admin" : "/dashboard/episodes";
+  }
 
   try {
     const session = await getIronSession<PodLeverSession>(cookieStore, getSessionOptions());
