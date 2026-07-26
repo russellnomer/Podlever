@@ -173,5 +173,7 @@ overrides:
   esbuild: "0.28.1"
 
 allowBuilds:
+  '@ffmpeg-installer/linux-x64': set this to true or false
+  '@ffprobe-installer/linux-x64': set this to true or false
   esbuild: set this to true or false
   sharp: set this to true or false

@@ -161,3 +161,92 @@ export async function getJobCounts(): Promise<Record<string, number>> {
   }
   return counts;
 }
+
+// ─── Pipeline queue visibility + self-healing ─────────────────────────────────
+
+/** One entry in the processing "assembly line" queue, in claim order. */
+export interface QueueEntry {
+  episodeId: string;
+  status:    "pending" | "running" | "retrying" | string;
+  runAt:     Date;
+  attempts:  number;
+  lastError: string | null;
+}
+
+/**
+ * getProcessQueue — All in-flight process_episode jobs in the order the
+ * worker will claim them (running first, then by priority/run_at/created_at).
+ * Powers the assembly-line queue view ("The Grove is #2 in line").
+ */
+export async function getProcessQueue(): Promise<QueueEntry[]> {
+  const rows = await db.execute<{
+    episode_id: string; status: string; run_at: Date | string;
+    attempts: number; last_error: string | null;
+  }>(sql`
+    SELECT payload->>'episodeId' AS episode_id, status, run_at, attempts, last_error
+    FROM job_queue
+    WHERE job_type = 'process_episode'
+      AND status IN ('pending', 'running', 'retrying')
+    ORDER BY (status = 'running') DESC, priority DESC, run_at ASC, created_at ASC
+  `);
+  return rows.rows
+    .filter((r) => !!r.episode_id)
+    .map((r) => ({
+      episodeId: r.episode_id,
+      status:    r.status,
+      runAt:     new Date(r.run_at),
+      attempts:  Number(r.attempts),
+      lastError: r.last_error,
+    }));
+}
+
+/**
+ * hasClaimableJob — Is at least one process_episode job ready to run now?
+ * Used by the episode page to self-heal: Autoscale deployments throttle CPU
+ * after a response is sent, so the after() worker trigger can be lost. While
+ * someone is watching a processing episode, the page re-kicks the worker.
+ */
+export async function hasClaimableJob(): Promise<boolean> {
+  const rows = await db.execute<{ one: number }>(sql`
+    SELECT 1 AS one FROM job_queue
+    WHERE job_type = 'process_episode'
+      AND (status = 'pending' OR status = 'retrying')
+      AND run_at <= now()
+    LIMIT 1
+  `);
+  return rows.rows.length > 0;
+}
+
+/**
+ * kickWorker — Fire one worker cycle via the internal RPC endpoint.
+ * Best-effort and non-blocking for callers that don't await it.
+ */
+export async function kickWorker(): Promise<void> {
+  const port   = process.env.PORT ?? "3000";
+  const secret = process.env.CRON_SECRET ?? "";
+  try {
+    await fetch(`http://localhost:${port}/rpc/queue/worker`, {
+      method:  "POST",
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+  } catch (err) {
+    console.error(JSON.stringify({ event: "worker.kick_failed", error: String(err) }));
+  }
+}
+
+/**
+ * expediteEpisodeJob — Pull an episode's queued/retrying job forward to run
+ * immediately (used by the owner's Retry button so a 30-minute backoff never
+ * blocks an actively-watched episode). Returns true if a job was found.
+ */
+export async function expediteEpisodeJob(episodeId: string): Promise<boolean> {
+  const rows = await db.execute<{ id: string }>(sql`
+    UPDATE job_queue
+    SET run_at = now(), status = 'pending'
+    WHERE job_type = 'process_episode'
+      AND payload->>'episodeId' = ${episodeId}
+      AND status IN ('pending', 'retrying')
+    RETURNING id
+  `);
+  return rows.rows.length > 0;
+}

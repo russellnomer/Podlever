@@ -136,6 +136,8 @@ export async function POST(
     const { ownerId, audioStorageKey, fsmVersion } = episode;
 
     // ── 2. Download original audio ──────────────────────────────────────────
+    await episodeRepository.setProcessingError(episodeId, null);
+    await episodeRepository.setProcessingStage(episodeId, "downloading");
     const originalBuffer = await downloadAudioBuffer(audioStorageKey);
     const ext            = audioStorageKey.split(".").pop() ?? "mp3";
     const mimeMap: Record<string, string> = {
@@ -162,6 +164,7 @@ export async function POST(
     // speech-compression step — transcription quality is unaffected).
     const ENHANCE_MAX_BYTES = 25 * 1024 * 1024;
     const skipEnhancement   = isVideo || originalBuffer.byteLength > ENHANCE_MAX_BYTES;
+    if (!skipEnhancement) await episodeRepository.setProcessingStage(episodeId, "enhancing");
 
     try {
       if (skipEnhancement) {
@@ -221,6 +224,7 @@ export async function POST(
       }
     }
 
+    await episodeRepository.setProcessingStage(episodeId, "transcribing");
     // ── 5. Compress + transcribe ────────────────────────────────────────────
     // The transcription API caps requests at 25 MB, so ALL audio (enhanced or
     // original, audio or video) is compressed to speech-optimized mono MP3
@@ -270,6 +274,7 @@ export async function POST(
       storageKey: null,
     });
 
+    await episodeRepository.setProcessingStage(episodeId, "generating");
     // ── 7. Generate text assets in parallel ─────────────────────────────────
     const textAssetTypes = ["show_notes", "blog_post", "social_post", "guest_media_pack"] as const;
 
@@ -320,6 +325,7 @@ export async function POST(
 
     console.log(JSON.stringify({ event: "episode.process.assets_created", episodeId, count: generated.length + 1 }));
 
+    await episodeRepository.setProcessingStage(episodeId, "packaging");
     // ── 8. Generate guest media pack PDF ────────────────────────────────────
     const guestPackContent = generated.find((g) => g.assetType === "guest_media_pack")?.content ?? "";
 
@@ -390,6 +396,8 @@ export async function POST(
       durationMs:      Date.now() - startMs,
     });
 
+    await episodeRepository.setProcessingStage(episodeId, null);
+
     console.log(JSON.stringify({
       event:     "episode.process.complete",
       episodeId,
@@ -398,6 +406,10 @@ export async function POST(
     return NextResponse.json({ ok: true, episodeId });
 
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Surface the failure on the episode row so the UI can show which stage
+    // died and why (instead of an eternal spinner). Retries clear it.
+    await episodeRepository.setProcessingError(episodeId, message.slice(0, 500));
     console.error(JSON.stringify({
       event:     "episode.process.error",
       episodeId,

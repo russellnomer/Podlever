@@ -22,7 +22,8 @@ import { getAuthUser }         from "@/providers/auth";
 import { requireBetaAccess }   from "@/providers/owner-guard";
 import { episodeRepository, assetRepository } from "@/repositories";
 import { getSignedDownloadUrl }    from "@/lib/storage";
-import { StatusPoller }            from "../components/StatusPoller";
+import { ProcessingStepper }       from "../components/ProcessingStepper";
+import { after }                    from "next/server";
 import { AssetPanel }              from "./components/AssetPanel";
 import { ShareButton }             from "./components/ShareButton";
 import {
@@ -115,6 +116,33 @@ export default async function EpisodeDetailPage({
     episode = await episodeRepository.getEpisodeForOwner(episodeId, ownerId);
   } catch {
     notFound();
+  }
+
+  // Pipeline visibility: where is this episode on the assembly line?
+  let queuePosition = 0;
+  let aheadTitles: string[] = [];
+  if (episode.state === "processing") {
+    try {
+      const { getProcessQueue, hasClaimableJob, kickWorker } = await import("@/lib/job-queue");
+      const queue = await getProcessQueue();
+      const idx   = queue.findIndex((q) => q.episodeId === episodeId);
+      if (idx > 0) {
+        queuePosition = idx;
+        const ahead = queue.slice(0, idx);
+        const titles = await Promise.all(
+          ahead.map((q) => episodeRepository.getEpisodeById(q.episodeId).then((e) => e.title).catch(() => null)),
+        );
+        aheadTitles = titles.filter((t): t is string => !!t);
+      }
+      // Self-heal: Autoscale throttles CPU after responses, so the fire-and-
+      // forget worker trigger can be lost. While the owner watches this page
+      // (it polls every 5s), re-kick the worker whenever a job is claimable.
+      if (await hasClaimableJob()) {
+        after(async () => { await kickWorker(); });
+      }
+    } catch (err) {
+      console.warn(JSON.stringify({ event: "episode.queue.snapshot_failed", error: String(err) }));
+    }
   }
 
   // Fetch assets + audio URLs in parallel
@@ -210,7 +238,14 @@ export default async function EpisodeDetailPage({
         </div>
 
         {/* Status poller — visible + active only while processing */}
-        <StatusPoller state={episode.state} />
+        <ProcessingStepper
+          episodeId={episode.id}
+          state={episode.state}
+          stage={(episode as { processingStage?: string | null }).processingStage ?? null}
+          error={(episode as { processingError?: string | null }).processingError ?? null}
+          queuePosition={queuePosition}
+          aheadTitles={aheadTitles}
+        />
 
         {/* Processing placeholder */}
         {episode.state === "processing" && allAssets.length === 0 && (

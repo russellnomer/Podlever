@@ -254,6 +254,45 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
 ]);
 
 /**
+ * retryProcessingAction — Owner-triggered retry for a stuck/failed pipeline.
+ *
+ * Handles all three stuck shapes:
+ *  - job in retrying with a long backoff → pulled forward to run now
+ *  - job permanently failed / missing    → fresh job enqueued
+ *  - worker trigger lost (Autoscale CPU throttling) → worker re-kicked
+ */
+export async function retryProcessingAction(episodeId: string): Promise<{ ok: boolean; error?: string }> {
+  let userId: string;
+  try {
+    ({ userId } = await requireBetaUser());
+  } catch {
+    return { ok: false, error: "Not authorized. Please sign in again." };
+  }
+
+  try {
+    EpisodeIdSchema.parse(episodeId);
+    // Ownership check — throws if the episode isn't this user's
+    const episode = await episodeRepository.getEpisodeForOwner(episodeId, userId);
+    if (episode.state !== "processing") {
+      return { ok: false, error: "This episode is not processing." };
+    }
+
+    await episodeRepository.setProcessingError(episodeId, null);
+
+    const { expediteEpisodeJob, enqueueJob, kickWorker } = await import("@/lib/job-queue");
+    const expedited = await expediteEpisodeJob(episodeId);
+    if (!expedited) {
+      await enqueueJob("process_episode", { episodeId, ownerId: userId });
+    }
+    after(async () => { await kickWorker(); });
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Retry failed: ${msg}` };
+  }
+}
+
+/**
  * getSignedUploadUrlAction — Mint a signed direct-upload URL (Server Action).
  *
  * Replaces the former POST /api/uploads/sign route. In production a separate
