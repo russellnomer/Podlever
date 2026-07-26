@@ -21,7 +21,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { cookies }                        from "next/headers";
 import { getIronSession }                 from "iron-session";
-import { getSessionOptions }              from "@/providers/auth";
+import { getCallbackUrl, getSessionOptions } from "@/providers/auth";
 import { getStripeClient }                from "@/lib/stripe";
 import { db }                             from "@/db";
 import { users }                          from "@/db/schema";
@@ -35,7 +35,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = request.nextUrl;
   const plan    = searchParams.get("plan") ?? "";
   const billing = searchParams.get("billing") === "monthly" ? "monthly" : "annual";
-  const origin  = request.nextUrl.origin;
+  // request.nextUrl.origin is the internal proxy origin on Replit Autoscale
+  // (0.0.0.0:3000) — derive the real public origin instead.
+  const origin  = new URL(getCallbackUrl(request)).origin;
 
   // ── Validate plan param ───────────────────────────────────────────────────
   if (!VALID_PLANS.has(plan)) {
