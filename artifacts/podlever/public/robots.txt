@@ -8,4 +8,4 @@ Disallow: /dashboard
 Disallow: /api/
 
 # Sitemap location
-Sitemap: https://podlever.replit.app/sitemap.xml
+Sitemap: https://podlever.com/sitemap.xml
