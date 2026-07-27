@@ -6,8 +6,8 @@
  * Last modified: 2026-07-19 by agent (Board priority — shareable episode links)
  *
  * "use client" — toggles sharing on/off, copies share URL to clipboard.
- * Calls POST /api/episodes/[id]/share-token to generate a token.
- * Calls DELETE /api/episodes/[id]/share-token to revoke sharing.
+ * Calls POST /rpc/episodes/[id]/share-token to generate a token.
+ * Calls DELETE /rpc/episodes/[id]/share-token to revoke sharing.
  */
 
 "use client";
@@ -33,7 +33,7 @@ export function ShareButton({ episodeId, initialShareToken }: ShareButtonProps) 
   async function enableSharing() {
     setLoading(true);
     try {
-      const res  = await fetch(`/api/episodes/${episodeId}/share-token`, { method: "POST" });
+      const res  = await fetch(`/rpc/episodes/${episodeId}/share-token`, { method: "POST" });
       const data = await res.json() as { shareToken?: string };
       if (data.shareToken) setShareToken(data.shareToken);
     } catch {
@@ -46,7 +46,7 @@ export function ShareButton({ episodeId, initialShareToken }: ShareButtonProps) 
   async function disableSharing() {
     setLoading(true);
     try {
-      await fetch(`/api/episodes/${episodeId}/share-token`, { method: "DELETE" });
+      await fetch(`/rpc/episodes/${episodeId}/share-token`, { method: "DELETE" });
       setShareToken(null);
     } catch {
       /* ignore */

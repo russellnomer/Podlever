@@ -61,7 +61,7 @@ import {
   getCallbackUrl,
   getSessionOptions,
   getPkceStateOptions,
-  getOwnerReplitUserId,
+  getOwnerReplitUserIds,
 } from "@/providers/auth";
 import type { PodLeverSession, PkceState } from "@/providers/auth";
 import { trackServerEvent } from "@/lib/analytics";
@@ -175,10 +175,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   // ── Step 4: Determine role ────────────────────────────────────────────────────
   // Use the centralized helper — do NOT read process.env directly in this file.
-  const ownerReplitUserId = getOwnerReplitUserId();
+  // OWNER_REPLIT_USER_ID may be a comma-separated list (founder has multiple
+  // Replit accounts); any listed ID gets role "owner".
+  const ownerReplitUserIds = getOwnerReplitUserIds();
 
   // Only "owner" and "user" are valid per the userRoleEnum in db/schema/users.ts
-  const role = replitUserId === ownerReplitUserId ? ("owner" as const) : ("user" as const);
+  const role = ownerReplitUserIds.includes(replitUserId) ? ("owner" as const) : ("user" as const);
 
   // ── Step 5: Upsert user in DB (auth-sync — only write path for users table) ──
   let dbUserId: string;

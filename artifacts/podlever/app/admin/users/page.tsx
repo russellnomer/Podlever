@@ -242,7 +242,8 @@ export default async function AdminUsersPage({
                         </span>
                       </div>
                       <p className="text-xs text-gray-500">
-                        {u.email ?? "no linked email"} · joined {fmtDate(u.createdAt)}
+                        {u.email ?? "no linked email"} · joined {fmtDate(u.createdAt)} ·{" "}
+                        Replit ID <span className="font-mono">{u.externalIdentityId}</span>
                       </p>
                     </div>
                     <div className="flex items-center gap-6 text-sm">

@@ -228,7 +228,7 @@ export default async function EpisodeDetailPage({
               {/* ZIP download — all assets in one click */}
               {isReady && (
                 <a
-                  href={`/api/episodes/${episodeId}/zip`}
+                  href={`/rpc/episodes/${episodeId}/zip`}
                   download
                   className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium
                              text-gray-700 hover:bg-gray-200 transition-colors"
