@@ -1,11 +1,11 @@
 /**
- * app/api/episodes/[id]/guest-pack/route.ts — Guest media pack PDF download
+ * app/rpc/episodes/[id]/guest-pack/route.ts — Guest media pack PDF download
  *
  * Part of: PodLever
  * Created: 2026-07-19
  * Last modified: 2026-07-19 by agent (Board priority — guest pack PDF)
  *
- * Route: GET /api/episodes/[id]/guest-pack
+ * Route: GET /rpc/episodes/[id]/guest-pack
  *
  * If a pre-generated PDF exists in GCS (stored during processing), serves it
  * via a signed URL redirect. If not (legacy episodes), generates on-demand.

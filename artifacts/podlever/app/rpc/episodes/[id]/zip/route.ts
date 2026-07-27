@@ -1,11 +1,11 @@
 /**
- * app/api/episodes/[id]/zip/route.ts — Bulk ZIP download for all episode assets
+ * app/rpc/episodes/[id]/zip/route.ts — Bulk ZIP download for all episode assets
  *
  * Part of: PodLever
  * Created: 2026-07-19
  * Last modified: 2026-07-19 by agent (Board priority — ZIP bulk export)
  *
- * Route: GET /api/episodes/[id]/zip
+ * Route: GET /rpc/episodes/[id]/zip
  *
  * Packages all text assets + audio into a downloadable ZIP.
  * Streams the response as application/zip with a Content-Disposition header.

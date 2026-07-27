@@ -9,7 +9,7 @@
  *   1. Reads the billing period (annual/monthly) from localStorage —
  *      the same key used by PricingToggle so the price always matches
  *      what the user sees on screen.
- *   2. POSTs to /api/billing/checkout with the matching Stripe price ID.
+ *   2. POSTs to /rpc/billing/checkout with the matching Stripe price ID.
  *   3. Redirects the browser to the Stripe Checkout URL on success.
  *   4. Redirects to /auth/login?next=... if the user is not logged in (401).
  *   5. Shows an inline error message on any other failure.
@@ -72,7 +72,7 @@ export function CheckoutButton({
     const priceId  = period === "monthly" ? monthlyPriceId : annualPriceId;
 
     try {
-      const resp = await fetch("/api/billing/checkout", {
+      const resp = await fetch("/rpc/billing/checkout", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ priceId }),

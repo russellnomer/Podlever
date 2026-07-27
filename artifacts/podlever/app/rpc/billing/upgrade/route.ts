@@ -1,11 +1,11 @@
 /**
- * app/api/billing/upgrade/route.ts — Server-side Stripe Checkout redirect
+ * app/rpc/billing/upgrade/route.ts — Server-side Stripe Checkout redirect
  *
  * Part of: PodLever
  * Created: 2026-07-19
  * Last modified: 2026-07-19 by agent (Task #58 — pricing page Stripe Checkout)
  *
- * GET /api/billing/upgrade?plan=pro&billing=annual
+ * GET /rpc/billing/upgrade?plan=pro&billing=annual
  *
  * Used by the pricing page when a logged-in user lands with ?upgrade=<plan>.
  * Keeps the checkout initiation fully server-side — no client JS required for

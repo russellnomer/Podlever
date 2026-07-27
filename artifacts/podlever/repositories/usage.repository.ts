@@ -139,6 +139,7 @@ class UsageRepository {
     const [userRow] = await db
       .select({
         plan:               users.plan,
+        role:               users.role,
         episodeCapOverride: users.episodeCapOverride,
         accessExpiresAt:    users.accessExpiresAt,
         suspendedAt:        users.suspendedAt,
@@ -149,6 +150,26 @@ class UsageRepository {
 
     const plan = userRow?.plan ?? "free";
     const tier = getTier(plan);
+
+    // ── Owner exemption ──────────────────────────────────────────────────────
+    // The founder (role = 'owner') is never usage-gated on their own product.
+    // Without this, the owner's default plan of 'free' (1 lifetime episode)
+    // paywalled the founder after their first successful episode
+    // (prod incident 2026-07-27). Owner COGS are still tracked and visible on
+    // /admin/cogs and the Founder card — this only removes the upload gate.
+    if (userRow?.role === "owner") {
+      const used = await this.getTotalEpisodesEver(userId);
+      const now  = new Date();
+      return {
+        used,
+        limit:       Infinity,
+        periodStart: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+        plan,
+        tierLabel:   "Founder",
+        atLimit:     false,
+        isTrialOnly: false,
+      };
+    }
 
     // ── Compute period start (UTC midnight on the 1st of this month) ────────
     const now         = new Date();
@@ -179,8 +200,12 @@ class UsageRepository {
     if (tier.isTrialOnly) {
       // ── Trial tier: gate on lifetime count, not monthly ───────────────────
       // Free users get exactly 1 episode ever. No monthly reset.
+      // EXCEPTION: an admin-set episodeCapOverride raises the lifetime
+      // allowance (previously the override was silently ignored for free
+      // users, leaving the owner no /admin/users lever to unblock a stuck
+      // trial account — prod incident 2026-07-27).
       const used  = await this.getTotalEpisodesEver(userId);
-      const limit = 1;
+      const limit = userRow?.episodeCapOverride ?? 1;
       return {
         used,
         limit,
