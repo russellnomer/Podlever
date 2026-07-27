@@ -55,3 +55,6 @@ export * from "./episode-cogs";
 
 // In-app feedback submissions (append-only; no FK dependencies)
 export * from "./feedback";
+
+// Fixed monthly business costs ledger (owner-managed via /admin/cogs)
+export * from "./business-costs";

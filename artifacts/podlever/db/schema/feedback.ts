@@ -46,7 +46,27 @@ export const feedback = pgTable("feedback", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`),
+
+  // ── Knowledge-base fields (added 2026-07-27, founder request) ──────────────
+  // The inbox doubles as a problem→solution record: each item is triaged to a
+  // status, and resolved items link to the GitHub PR/issue that fixed them.
+
+  /** Triage status: 'new' | 'in_progress' | 'addressed' | 'wont_fix' */
+  status: text("status").notNull().default("new"),
+
+  /** Owner's note describing how the feedback was addressed */
+  resolutionNote: text("resolution_note"),
+
+  /** Link to the GitHub PR/issue/commit that resolved it */
+  resolutionLink: text("resolution_link"),
+
+  /** When the item was marked addressed/wont_fix */
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 });
+
+/** Valid feedback triage statuses. */
+export const FEEDBACK_STATUSES = ["new", "in_progress", "addressed", "wont_fix"] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
 
 export type Feedback    = typeof feedback.$inferSelect;
 export type NewFeedback = typeof feedback.$inferInsert;

@@ -263,16 +263,20 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
  */
 export async function retryProcessingAction(episodeId: string): Promise<{ ok: boolean; error?: string }> {
   let userId: string;
+  let isOwner = false;
   try {
-    ({ userId } = await requireBetaUser());
+    ({ userId, isOwner } = await requireBetaUser());
   } catch {
     return { ok: false, error: "Not authorized. Please sign in again." };
   }
 
   try {
     EpisodeIdSchema.parse(episodeId);
-    // Ownership check — throws if the episode isn't this user's
-    const episode = await episodeRepository.getEpisodeForOwner(episodeId, userId);
+    // Ownership check — throws if the episode isn't this user's.
+    // The owner may retry ANY user's episode (admin rescue, 2026-07-27).
+    const episode = isOwner
+      ? await episodeRepository.getEpisodeById(episodeId)
+      : await episodeRepository.getEpisodeForOwner(episodeId, userId);
     if (episode.state !== "processing") {
       return { ok: false, error: "This episode is not processing." };
     }
@@ -487,8 +491,9 @@ export async function cancelAndArchiveEpisodeAction(
   episodeId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   let userId: string;
+  let isOwner = false;
   try {
-    ({ userId } = await requireBetaUser());
+    ({ userId, isOwner } = await requireBetaUser());
   } catch {
     return { ok: false, error: "Not authorized. Please sign in again." };
   }
@@ -496,7 +501,11 @@ export async function cancelAndArchiveEpisodeAction(
   try {
     EpisodeIdSchema.parse(episodeId);
     // Ownership check — throws if the episode isn't this user's.
-    const episode = await episodeRepository.getEpisodeForOwner(episodeId, userId);
+    // The owner may cancel & archive ANY user's episode (admin cleanup of
+    // orphaned drafts/stuck rows across accounts, 2026-07-27).
+    const episode = isOwner
+      ? await episodeRepository.getEpisodeById(episodeId)
+      : await episodeRepository.getEpisodeForOwner(episodeId, userId);
     if (episode.state === "archived") {
       return { ok: true }; // already gone — idempotent
     }
@@ -525,4 +534,20 @@ export async function cancelAndArchiveEpisodeAction(
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `Cancel failed: ${msg}` };
   }
+}
+
+/**
+ * archiveEpisodeFromAdminAction — Form-action wrapper for the admin episodes
+ * table's per-row "Archive" cleanup button (owner-only in practice: the page
+ * is owner-gated and cancelAndArchiveEpisodeAction only bypasses owner-scoping
+ * for role="owner"). Cancels any active jobs and archives via the FSM, then
+ * refreshes the admin table. Added 2026-07-27 after the founder found orphaned
+ * drafts he couldn't remove ("Need to be able to clean this up too").
+ */
+export async function archiveEpisodeFromAdminAction(formData: FormData): Promise<void> {
+  const episodeId = String(formData.get("episodeId") ?? "");
+  const res = await cancelAndArchiveEpisodeAction(episodeId);
+  if (!res.ok) throw new Error(res.error ?? "Archive failed");
+  const { revalidatePath } = await import("next/cache");
+  revalidatePath("/dashboard/admin/episodes");
 }
