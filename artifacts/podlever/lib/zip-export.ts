@@ -16,7 +16,7 @@
  *     social-posts.md
  *     guest-media-pack.md
  *     original-audio.{ext}      (if available)
- *     cleaned-audio.wav         (if audio enhancement ran)
+ *     cleaned-audio.{mp3|wav}   (if audio enhancement ran)
  *     _meta.json                (episode metadata)
  *
  * HUMAN REVIEW NOTES:
@@ -115,7 +115,8 @@ export async function buildEpisodeZip(input: ZipInput): Promise<Buffer> {
   if (episode.cleanedAudioStorageKey) {
     try {
       const buffer = await downloadAudioBuffer(episode.cleanedAudioStorageKey);
-      folder.file("cleaned-audio.wav", buffer);
+      const cleanedExt = episode.cleanedAudioStorageKey.split(".").pop() ?? "mp3";
+      folder.file(`cleaned-audio.${cleanedExt}`, buffer);
     } catch (err) {
       console.warn(JSON.stringify({
         event:     "zip_export.cleaned_audio_skip",

@@ -123,7 +123,7 @@ class FFmpegAdaptiveProvider implements AudioProvider {
     const tmp        = tmpdir();
     const ext        = mimeToExt(inputMimeType);
     const inputPath  = join(tmp, `podlever-${episodeId}-adaptive-in.${ext}`);
-    const outputPath = join(tmp, `podlever-${episodeId}-adaptive-out.wav`);
+    const outputPath = join(tmp, `podlever-${episodeId}-adaptive-out.mp3`);
 
     // Write raw audio to temp file so FFmpeg can demux it
     await writeFile(inputPath, input);
@@ -137,22 +137,28 @@ class FFmpegAdaptiveProvider implements AudioProvider {
       //   -af         audio filter chain (anlmdn → loudnorm)
       //   -ar 44100   resample to 44.1 kHz (Whisper-optimised)
       //   -ac 1       downmix to mono (halves Whisper token cost)
+      // -vn strips video streams (video uploads get cleaned audio too) and the
+      // output is 128 kbps mono MP3 instead of WAV — see ffmpeg.ts for rationale
+      // (2026-07-27 fix: video/large inputs previously produced NO cleaned audio).
       await execFileAsync(getFfmpegPath(), [
         "-y",
         "-i",  inputPath,
+        "-vn",
         "-af", "anlmdn=s=7:p=0.002:r=0.002:m=15,loudnorm=I=-16:TP=-1.5:LRA=11",
         "-ar", "44100",
         "-ac", "1",
+        "-b:a", "128k",
+        "-f",  "mp3",
         outputPath,
       ], {
-        timeout:   10 * 60 * 1_000,   // 10-minute hard cap — no episode should exceed this
+        timeout:   20 * 60 * 1_000,   // 20-minute hard cap (long episodes + video demux)
         maxBuffer: 10 * 1024 * 1024,  // 10 MB stderr buffer (FFmpeg is verbose)
       });
 
       // Pull the enhanced audio back into memory for the caller
       const buffer = await readFile(outputPath);
 
-      return { buffer, mimeType: "audio/wav", provider: this.name };
+      return { buffer, mimeType: "audio/mpeg", provider: this.name };
 
     } finally {
       // Clean up temp files unconditionally — failures here are non-fatal.

@@ -26,6 +26,7 @@ import {
   inviteWaitlistEntryAction,
   directInviteByEmailAction,
   deleteWaitlistEntryAction,
+  recordLeadOutcomeAction,
 } from "@/app/actions/admin.actions";
 import { Users, ArrowLeft, Mail, CheckCircle, Clock, UserCheck, Send, UserPlus, Trash2 } from "lucide-react";
 
@@ -63,6 +64,26 @@ Founder, PodLever
 https://podlever.com`;
 
   return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+// ─── Funnel display (lead-to-cash, 2026-07-27) ───────────────────────────────
+
+/** One stage of the lead-to-cash funnel for a waitlist row. */
+function funnelStages(entry: {
+  invitedAt: Date | null; claimedAt: Date | null; activatedAt: Date | null;
+  firstEpisodeAt: Date | null; convertedAt: Date | null;
+}): { label: string; at: Date | null }[] {
+  return [
+    { label: "Invited",     at: entry.invitedAt },
+    { label: "Signed in",   at: entry.claimedAt },
+    { label: "Onboarded",   at: entry.activatedAt },
+    { label: "1st episode", at: entry.firstEpisodeAt },
+    { label: "Paying",      at: entry.convertedAt },
+  ];
+}
+
+function fmtShort(d: Date): string {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // ─── Status display config ────────────────────────────────────────────────────
@@ -242,6 +263,9 @@ export default async function AdminWaitlistPage({
                     Status
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Funnel
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     Source
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -273,6 +297,53 @@ export default async function AdminWaitlistPage({
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.color}`}>
                           {meta.label}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {funnelStages(entry).map((st, i) => (
+                            <span
+                              key={st.label}
+                              title={st.at ? `${st.label}: ${fmtShort(st.at)}` : `${st.label}: not yet`}
+                              className={`flex items-center gap-1 ${i > 0 ? "before:content-['·'] before:mr-1 before:text-gray-300" : ""}`}
+                            >
+                              <span className={`text-[10px] font-medium ${st.at ? "text-green-700" : "text-gray-300"}`}>
+                                {st.at ? "✓" : "○"} {st.label}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                        {(entry.lostReason || entry.nextStep) && (
+                          <p className="mt-1 max-w-[280px] text-[10px] text-amber-700">
+                            {entry.lostReason && <>Why not: {entry.lostReason}</>}
+                            {entry.lostReason && entry.nextStep && " — "}
+                            {entry.nextStep && <>To win: {entry.nextStep}</>}
+                          </p>
+                        )}
+                        {entry.status !== "converted" && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-[10px] font-medium text-indigo-500 hover:underline">
+                              Log outcome
+                            </summary>
+                            <form action={recordLeadOutcomeAction} className="mt-1 w-64 space-y-1">
+                              <input type="hidden" name="id" value={entry.id} />
+                              <input
+                                name="lostReason"
+                                defaultValue={entry.lostReason ?? ""}
+                                placeholder="Why haven't they bought?"
+                                className="w-full rounded border border-gray-200 px-2 py-1 text-[11px]"
+                              />
+                              <input
+                                name="nextStep"
+                                defaultValue={entry.nextStep ?? ""}
+                                placeholder="What would it take to win them?"
+                                className="w-full rounded border border-gray-200 px-2 py-1 text-[11px]"
+                              />
+                              <button type="submit" className="rounded bg-indigo-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-700">
+                                Save
+                              </button>
+                            </form>
+                          </details>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">
                         {entry.source}

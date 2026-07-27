@@ -16,7 +16,7 @@ import Stripe from "stripe";
 import { getStripeSync, getUncachableStripeClient } from "./stripeClient";
 import { db }    from "./db";
 import { users } from "./schema";
-import { eq }    from "drizzle-orm";
+import { eq, sql }    from "drizzle-orm";
 
 const GRACE_PERIOD_DAYS = 7;
 
@@ -82,6 +82,27 @@ async function handleStripeEvent(
         .where(eq(users.stripeCustomerId, session.customer));
 
       console.log(JSON.stringify({ event: "stripe.checkout.completed", customerId: session.customer, plan: planSlug }));
+
+      // Lead-to-cash funnel (2026-07-27): close the loop on the waitlist row.
+      // Raw SQL because api-server's schema.ts only maps `users`; the waitlist
+      // row is matched via users.external_identity_id → waitlist.replit_user_id.
+      try {
+        await db.execute(sql`
+          UPDATE waitlist
+             SET status       = 'converted',
+                 converted_at = COALESCE(converted_at, now()),
+                 updated_at   = now()
+           WHERE replit_user_id = (
+                   SELECT external_identity_id FROM users
+                    WHERE stripe_customer_id = ${session.customer}
+                    LIMIT 1
+                 )
+        `);
+        console.log(JSON.stringify({ event: "funnel.lead_converted", customerId: session.customer }));
+      } catch (err) {
+        // Never fail the webhook over funnel bookkeeping
+        console.error(JSON.stringify({ event: "funnel.convert_stamp_failed", error: String(err) }));
+      }
       break;
     }
 

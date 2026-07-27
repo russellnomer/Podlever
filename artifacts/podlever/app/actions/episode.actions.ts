@@ -57,8 +57,17 @@ const EpisodeIdSchema = z.string().uuid("episodeId must be a valid UUID");
 export async function createEpisodeAction(
   input: unknown,
 ): Promise<Episode> {
-  const { userId } = await requireBetaUser();
-  return episodeService.createEpisode(input, userId);
+  const { userId, replitUserId } = await requireBetaUser();
+  const episode = await episodeService.createEpisode(input, userId);
+  // Lead-to-cash funnel: stamp the user's FIRST episode on their waitlist row.
+  // Best-effort — funnel bookkeeping must never break episode creation.
+  try {
+    const { waitlistRepository } = await import("@/repositories");
+    await waitlistRepository.markFirstEpisode(replitUserId);
+  } catch (err) {
+    console.error(JSON.stringify({ event: "funnel.first_episode_stamp_failed", error: String(err) }));
+  }
+  return episode;
 }
 
 /**

@@ -94,7 +94,7 @@ class FFmpegProvider implements AudioProvider {
     const tmp        = tmpdir();
     const ext        = mimeToExt(inputMimeType);
     const inputPath  = join(tmp, `podlever-${episodeId}-ffmpeg-in.${ext}`);
-    const outputPath = join(tmp, `podlever-${episodeId}-ffmpeg-out.wav`);
+    const outputPath = join(tmp, `podlever-${episodeId}-ffmpeg-out.mp3`);
 
     // Write input buffer to temp file
     await writeFile(inputPath, input);
@@ -104,22 +104,31 @@ class FFmpegProvider implements AudioProvider {
       // -y          overwrite output without prompting
       // -ac 1       downmix to mono (podcast-optimized, ~50% smaller for Whisper)
       // -ar 44100   44.1 kHz sample rate
+      // -vn strips any video stream, so video uploads (mp4/mov/webm) yield a
+      // cleaned AUDIO deliverable too — before 2026-07-27 video inputs skipped
+      // enhancement entirely and the advertised "Cleaned Audio" asset was
+      // never produced. Output is 128 kbps mono MP3 (was uncompressed WAV):
+      // podcast-deliverable quality at ~1/10 the size, which also lets the
+      // pipeline enhance large files without ballooning memory.
       await execFileAsync(getFfmpegPath(), [
         "-y",
         "-i",  inputPath,
+        "-vn",
         "-af", "afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11",
         "-ar", "44100",
         "-ac", "1",
+        "-b:a", "128k",
+        "-f",  "mp3",
         outputPath,
       ], {
-        timeout: 10 * 60 * 1_000, // 10-minute hard cap
+        timeout: 20 * 60 * 1_000, // 20-minute hard cap (long episodes + video demux)
         maxBuffer: 10 * 1024 * 1024, // 10 MB stderr buffer
       });
 
       // Read enhanced audio back into memory
       const buffer = await readFile(outputPath);
 
-      return { buffer, mimeType: "audio/wav", provider: this.name };
+      return { buffer, mimeType: "audio/mpeg", provider: this.name };
 
     } finally {
       // Always clean up temp files — failures here are non-fatal
