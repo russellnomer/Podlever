@@ -19,7 +19,52 @@
 
 import type { NextConfig } from "next";
 
+/**
+ * SECURITY_HEADERS — OWASP Secure Headers baseline (2026-07-27).
+ *
+ * CSP notes:
+ * - No third-party scripts/fonts exist in the app (verified via repo grep),
+ *   so script-src stays first-party. Next.js requires 'unsafe-inline' for its
+ *   inline bootstrap scripts (nonce-based CSP is a future hardening step).
+ * - storage.googleapis.com is allowed for connect-src (direct browser uploads
+ *   via GCS signed URLs) and img/media-src (episode audio playback).
+ * - frame-ancestors 'none' replaces X-Frame-Options (still sent for legacy).
+ * - If a future feature embeds an external script (analytics, Stripe.js),
+ *   its origin MUST be added here or the feature silently breaks.
+ */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://storage.googleapis.com",
+  "media-src 'self' blob: https://storage.googleapis.com",
+  "connect-src 'self' https://storage.googleapis.com",
+  "font-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "upgrade-insecure-requests",
+].join("; ");
+
+const SECURITY_HEADERS = [
+  { key: "Content-Security-Policy", value: CSP },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+  { key: "X-DNS-Prefetch-Control", value: "off" },
+];
+
 const nextConfig: NextConfig = {
+  // Do not advertise the framework (removes `x-powered-by: Next.js`).
+  poweredByHeader: false,
+
+  async headers() {
+    return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
+  },
+
   // Allow Next.js dev server to serve /_next/* resources to the Replit proxy domain.
   // Without this, the dev server emits a cross-origin warning and future Next.js versions
   // will block these requests entirely. The Replit proxy relays from the public dev domain

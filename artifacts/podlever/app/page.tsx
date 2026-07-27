@@ -48,8 +48,30 @@ export default async function LandingPage() {
   const user = await getAuthUser().catch(() => null);
   const isOwner = user?.role === "owner";
 
+  // JSON-LD structured data (SoftwareApplication) — helps search engines show
+  // rich results. Prices must stay in sync with lib/tiers.ts / pricing page.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "PodLever",
+    url: "https://podlever.com",
+    applicationCategory: "MultimediaApplication",
+    operatingSystem: "Web",
+    description:
+      "PodLever turns one podcast recording into a complete content library — cleaned audio, transcript, show notes, blog post, social posts, and a guest media pack.",
+    offers: [
+      { "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD" },
+      { "@type": "Offer", name: "Pro", price: "29", priceCurrency: "USD" },
+      { "@type": "Offer", name: "Agency", price: "149", priceCurrency: "USD" },
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-[#0D0D0F] text-zinc-100">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
 
       {/* ── Owner shortcut banner ─────────────────────────────────────────── */}
       {isOwner && (
