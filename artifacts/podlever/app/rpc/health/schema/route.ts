@@ -4,9 +4,9 @@
  * Part of: PodLever
  * Created: 2026-07-26 by agent (schema drift incident)
  *
- * Route: GET /rpc/health/schema?token=<CRON_SECRET>[&heal=1]
+ * Route: GET /rpc/health/schema[?heal=1]
  *
- * Answers, from a browser, in one second:
+ * Answers, in one second:
  *   - What code is running (boot time of this server instance)
  *   - Which migrations the ledger has recorded
  *   - Whether the LIVE database matches db/schema right now
@@ -15,23 +15,25 @@
  * `?heal=1` re-runs the non-destructive healer on demand (ADD COLUMN
  * IF NOT EXISTS only — never drops or modifies anything).
  *
- * Auth: CRON_SECRET via `?token=` query param (browser-friendly) or
- * Authorization bearer header. 404s without it so the route stays invisible.
+ * Auth: CRON_SECRET via `Authorization: Bearer` header ONLY. The former
+ * `?token=` query-param path was removed 2026-07-27 (Security sprint PR #22):
+ * query strings land in autoscale/Cloud Run access logs, so accepting the
+ * secret there leaks it to anyone with log access. Call it with:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" https://podlever.com/rpc/health/schema
+ * Comparison is constant-time (timingSafeEqual), matching the cron routes.
+ * 404s without valid auth so the route stays invisible.
  *
  * SECURITY: exposes table/column NAMES only — never data.
  */
 
 import { type NextRequest, NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/cron-auth";
 import { verifyAndHealSchema, getLastSchemaReport, getBootedAt } from "@/lib/schema-guard";
 
 export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const token = req.nextUrl.searchParams.get("token") ?? "";
-  return bearer === secret || token === secret;
+  return isCronAuthorized(req.headers.get("authorization"));
 }
 
 export async function GET(req: NextRequest) {

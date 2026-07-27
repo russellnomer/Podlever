@@ -253,3 +253,23 @@ export async function getObjectSize(storageKey: string): Promise<number | null> 
     return null;
   }
 }
+
+/**
+ * readObjectHead — Fetch the first `maxBytes` of a GCS object (ranged read).
+ *
+ * Used by finalizeDirectUploadAction for magic-byte content sniffing without
+ * downloading a potentially 300MB file. Returns null if the object is missing
+ * or the read fails.
+ *
+ * Added: 2026-07-27 (Security sprint — PR #22)
+ */
+export async function readObjectHead(storageKey: string, maxBytes = 64): Promise<Buffer | null> {
+  try {
+    const [contents] = await getBucket()
+      .file(storageKey)
+      .download({ start: 0, end: maxBytes - 1 });
+    return contents;
+  } catch {
+    return null;
+  }
+}
