@@ -250,3 +250,55 @@ export async function expediteEpisodeJob(episodeId: string): Promise<boolean> {
   `);
   return rows.rows.length > 0;
 }
+
+/**
+ * getLatestJobForEpisode — Most recent job row for an episode, ANY status.
+ *
+ * Unlike getProcessQueue (active jobs only), this also returns permanently
+ * failed jobs — needed by the episode page to distinguish "in line" from
+ * "dead and needs owner action" and to surface last_error for troubleshooting.
+ */
+export async function getLatestJobForEpisode(episodeId: string): Promise<{
+  status: string; attempts: number; maxAttempts: number;
+  lastError: string | null; runAt: Date;
+} | null> {
+  const rows = await db.execute<{
+    status: string; attempts: number; max_attempts: number;
+    last_error: string | null; run_at: Date | string;
+  }>(sql`
+    SELECT status, attempts, max_attempts, last_error, run_at
+    FROM job_queue
+    WHERE job_type = 'process_episode'
+      AND payload->>'episodeId' = ${episodeId}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `);
+  const r = rows.rows[0];
+  if (!r) return null;
+  return {
+    status:      r.status,
+    attempts:    Number(r.attempts),
+    maxAttempts: Number(r.max_attempts),
+    lastError:   r.last_error,
+    runAt:       new Date(r.run_at),
+  };
+}
+
+/**
+ * cancelJobsForEpisode — Mark all active jobs for an episode as failed with a
+ * "Cancelled by owner" note so the worker will never pick them up again.
+ * Used by the owner's Cancel & delete flow. Returns number of jobs cancelled.
+ */
+export async function cancelJobsForEpisode(episodeId: string): Promise<number> {
+  const rows = await db.execute<{ id: string }>(sql`
+    UPDATE job_queue
+    SET status = 'failed',
+        last_error = 'Cancelled by owner',
+        attempts = max_attempts
+    WHERE job_type = 'process_episode'
+      AND payload->>'episodeId' = ${episodeId}
+      AND status IN ('pending', 'running', 'retrying')
+    RETURNING id
+  `);
+  return rows.rows.length;
+}

@@ -121,11 +121,27 @@ export default async function EpisodeDetailPage({
   // Pipeline visibility: where is this episode on the assembly line?
   let queuePosition = 0;
   let aheadTitles: string[] = [];
+  // Dead-end detection: episode says "processing" but NO active job exists
+  // (job failed permanently after max retries, or the row is gone). Without
+  // this, the stepper shows "Queued…" forever with no Retry button — exactly
+  // what happened on 2026-07-26 when jobs burned all attempts during the
+  // schema-drift window before processing_error could even be recorded.
+  let jobStalled = false;
+  let jobDetail: string | null = null;
   if (episode.state === "processing") {
     try {
-      const { getProcessQueue, hasClaimableJob, kickWorker } = await import("@/lib/job-queue");
+      const { getProcessQueue, getLatestJobForEpisode, hasClaimableJob, kickWorker } =
+        await import("@/lib/job-queue");
       const queue = await getProcessQueue();
       const idx   = queue.findIndex((q) => q.episodeId === episodeId);
+      // A "processing" episode with no ACTIVE job is a dead end: its job either
+      // failed permanently (max retries) or vanished. Nothing will ever pick it
+      // up again, so the owner must see a Retry/Cancel path — not "Queued…".
+      const job  = await getLatestJobForEpisode(episodeId);
+      jobStalled = !job || !["pending", "running", "retrying"].includes(job.status);
+      if (jobStalled && job) {
+        jobDetail = `Attempt ${job.attempts}/${job.maxAttempts}${job.lastError ? ` — last error: ${job.lastError}` : ""}`;
+      }
       if (idx > 0) {
         queuePosition = idx;
         const ahead = queue.slice(0, idx);
@@ -242,7 +258,12 @@ export default async function EpisodeDetailPage({
           episodeId={episode.id}
           state={episode.state}
           stage={(episode as { processingStage?: string | null }).processingStage ?? null}
-          error={(episode as { processingError?: string | null }).processingError ?? null}
+          error={
+            (episode as { processingError?: string | null }).processingError ??
+            (jobStalled
+              ? `Processing stopped unexpectedly and will not resume on its own.${jobDetail ? ` (${jobDetail})` : ""} Press Retry now to start it fresh, or Cancel & delete to remove this episode.`
+              : null)
+          }
           queuePosition={queuePosition}
           aheadTitles={aheadTitles}
         />

@@ -61,6 +61,7 @@ export default async function AdminUsersPage({
 
   const params = await searchParams;
   const rows   = await adminUsersRepository.listUserOverview();
+  const owners = await adminUsersRepository.getOwnerOverview();
 
   const suspendedCount = rows.filter((r) => r.suspendedAt != null).length;
   const totalCost      = rows.reduce((s, r) => s + r.totalCostUsd, 0);
@@ -151,6 +152,46 @@ export default async function AdminUsersPage({
             <p className="mt-1 text-xs text-gray-500">lifetime pipeline COGS, all users</p>
           </div>
         </div>
+
+        {/* Founder accountability card — the owner's own usage, no controls.
+            Requested 2026-07-26: "I want to hold myself accountable too." */}
+        {owners.map((o, i) => (
+          <div
+            key={`owner-${i}`}
+            className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <p className="font-semibold text-gray-900">
+                  {o.displayName ?? "(no display name)"}
+                </p>
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">
+                  Founder (you)
+                </span>
+              </div>
+              <div className="flex items-center gap-6 text-right text-sm">
+                <div>
+                  <p className="font-semibold text-gray-900">{o.usedThisMonth}</p>
+                  <p className="text-xs text-gray-500">this month</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{o.lifetimeEpisodes}</p>
+                  <p className="text-xs text-gray-500">lifetime</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{fmtUsd(o.totalCostUsd)}</p>
+                  <p className="text-xs text-gray-500">your cost</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    {o.lastActivityAt ? fmtDate(o.lastActivityAt) : "never"}
+                  </p>
+                  <p className="text-xs text-gray-500">last episode</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
 
         {/* User cards */}
         {rows.length === 0 ? (
