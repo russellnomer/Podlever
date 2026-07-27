@@ -28,13 +28,13 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { claimNextJob, completeJob, failJob, hasClaimableJob, kickWorker } from "@/lib/job-queue";
 import { after } from "next/server";
+import { isCronAuthorized } from "@/lib/cron-auth";
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
 function isAuthorized(req: NextRequest): boolean {
-  const token  = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const secret = process.env.CRON_SECRET;
-  return !!secret && token === secret;
+  // Constant-time, header-only (Security sprint PR #22).
+  return isCronAuthorized(req.headers.get("authorization"));
 }
 
 // ─── Job handlers ──────────────────────────────────────────────────────────────

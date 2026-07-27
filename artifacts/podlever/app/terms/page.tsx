@@ -3,10 +3,10 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #21 — Legal compliance)
+ * Last modified: 2026-07-27 by agent (Security sprint PR #22 — production expansion)
  *
- * Basic terms of service covering acceptable use and limitation of liability.
- * Required before collecting email addresses publicly.
+ * Production terms: accounts, uploaded content & IP, prohibited content,
+ * plans/billing/fair use, acceptable use, liability, NY governing law.
  */
 
 import type { Metadata } from "next";
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 /** Effective date — update this constant whenever material changes are made. */
-const EFFECTIVE_DATE = "July 19, 2026";
+const EFFECTIVE_DATE = "July 27, 2026";
 
 export default function TermsPage() {
   return (
@@ -75,13 +75,81 @@ export default function TermsPage() {
           {/* Service description */}
           <Section heading="The service">
             <p>
-              PodLever is a podcast content automation tool currently in pre-launch. The waitlist
-              allows interested users to register for early access. Joining the waitlist does not
-              create an account, guarantee access, or establish a commercial relationship.
+              PodLever turns podcast episodes into ready-to-publish content: you upload an audio
+              or video recording, and we generate transcripts, show notes, social posts, cleaned
+              audio, and related assets. Some capabilities may be offered in early access or
+              marked as in development. Joining the waitlist does not create an account, guarantee
+              access, or establish a commercial relationship.
             </p>
             <p className="mt-3">
               We reserve the right to modify, suspend, or discontinue the service at any time
               without notice or liability.
+            </p>
+          </Section>
+
+          {/* Accounts */}
+          <Section heading="Your account">
+            <p>
+              Sign-in is provided through Replit. You are responsible for maintaining the security
+              of the account you sign in with (we strongly recommend enabling two-factor
+              authentication on it) and for all activity that occurs under your account. Notify us
+              immediately at hello@podlever.com if you believe your account has been compromised.
+            </p>
+          </Section>
+
+          {/* Your content */}
+          <Section heading="Your content">
+            <p>
+              <strong className="text-zinc-100">You own what you upload and what we generate
+              from it.</strong> Transcripts, show notes, social posts, cleaned audio, and every
+              other asset PodLever produces from your recordings belong to you. By uploading, you
+              grant us a limited, non-exclusive licence to store and process your content solely
+              to provide the service to you — nothing more. Your content is never used to train
+              AI models.
+            </p>
+            <p className="mt-3">You represent that:</p>
+            <ul className="mt-3 space-y-2 list-disc list-inside text-zinc-400">
+              <li>
+                You own the recordings you upload or have permission from the rights holders,
+                including consent from guests and co-hosts where required by law.
+              </li>
+              <li>
+                Your content does not infringe anyone&apos;s copyright, trademark, publicity, or
+                privacy rights.
+              </li>
+              <li>
+                Your content is not unlawful — including content that is defamatory, that
+                sexually exploits minors, that incites violence, or that impersonates another
+                person&apos;s voice without their consent.
+              </li>
+            </ul>
+            <p className="mt-4">
+              We may remove content and suspend accounts that violate these representations. You
+              can delete your episodes or request deletion of your entire library at any time
+              (see our <Link href="/privacy" className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">Privacy Policy</Link>).
+            </p>
+            <p className="mt-3 text-zinc-500 text-sm">
+              AI-generated output can contain errors. Review transcripts and generated assets
+              before publishing — you are responsible for what you publish.
+            </p>
+          </Section>
+
+          {/* Plans and billing */}
+          <Section heading="Plans, billing, and fair use">
+            <p>
+              Paid plans are billed through Stripe on a recurring basis at the prices shown on
+              our <Link href="/pricing" className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">pricing page</Link>. You can cancel any time; your plan
+              remains active until the end of the current billing period. Except where required
+              by law, payments are non-refundable once a billing period has begun.
+            </p>
+            <p className="mt-3">
+              Each plan includes a monthly episode allowance and a per-episode length limit.
+              To keep the service fast and fairly priced for everyone, plans also carry a
+              fair-use processing allowance:{" "}
+              <strong className="text-zinc-100">Pro — 25 hours of source audio per month; Agency
+              — 120 hours per month.</strong> If your usage consistently exceeds your plan&apos;s
+              allowance, we will contact you about an appropriate plan before restricting
+              anything.
             </p>
           </Section>
 
@@ -106,6 +174,18 @@ export default function TermsPage() {
                 Transmit any unsolicited commercial communications or harmful content through
                 the service.
               </li>
+              <li>
+                Upload files that are not genuine audio or video recordings, or attempt to
+                disguise other file types as media files.
+              </li>
+              <li>
+                Deliberately circumvent plan limits, processing allowances, or rate limits —
+                including by creating multiple accounts.
+              </li>
+              <li>
+                Probe, scan, or test the vulnerability of the service other than through a
+                good-faith report to hello@podlever.com.
+              </li>
             </ul>
             <p className="mt-4">
               We may terminate or restrict access to anyone who violates these terms at our sole
@@ -121,10 +201,8 @@ export default function TermsPage() {
               you any right to use our trademarks, logos, or other proprietary materials.
             </p>
             <p className="mt-3">
-              If you submit content to PodLever (for example, by uploading a podcast recording),
-              you retain all ownership of that content. By uploading, you grant us a limited,
-              non-exclusive licence to process the content solely for the purpose of providing
-              the service to you.
+              Ownership of the content you upload and the assets we generate from it is covered
+              in the &ldquo;Your content&rdquo; section above — in short: it&apos;s yours.
             </p>
           </Section>
 
@@ -167,9 +245,10 @@ export default function TermsPage() {
           {/* Governing law */}
           <Section heading="Governing law">
             <p>
-              These Terms are governed by the laws of the State of California, United States,
+              These Terms are governed by the laws of the State of New York, United States,
               without regard to its conflict-of-law provisions. Any dispute arising under these
-              Terms shall be resolved in the courts of competent jurisdiction in California.
+              Terms shall be resolved in the state or federal courts located in Nassau County or
+              the Eastern District of New York, and you consent to their jurisdiction.
             </p>
           </Section>
 

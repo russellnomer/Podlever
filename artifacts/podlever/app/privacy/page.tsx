@@ -3,12 +3,13 @@
  *
  * Part of: PodLever
  * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Task #21 — Legal compliance)
+ * Last modified: 2026-07-27 by agent (Security sprint PR #22 — production expansion)
  *
- * Plain-language privacy policy required before collecting email addresses
- * from the public (GDPR Art. 13, CCPA § 1798.100).
+ * Plain-language privacy policy (GDPR Art. 13, CCPA § 1798.100).
  *
- * Covers: data collected, purpose, retention, deletion rights, contact.
+ * Covers: waitlist data, account data, uploaded audio/video and generated
+ * content, payment data, retention, subprocessors, breach notification,
+ * deletion rights, contact.
  */
 
 import type { Metadata } from "next";
@@ -17,12 +18,12 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Privacy Policy — PodLever",
   description:
-    "PodLever collects only your email address for waitlist notifications. Read our full privacy policy.",
+    "How PodLever handles your email, account, uploaded audio, generated content, and payment data. Read our full privacy policy.",
   alternates: { canonical: "/privacy" },
 };
 
 /** Effective date — update this constant whenever material changes are made. */
-const EFFECTIVE_DATE = "July 19, 2026";
+const EFFECTIVE_DATE = "July 27, 2026";
 
 export default function PrivacyPage() {
   return (
@@ -96,20 +97,42 @@ export default function PrivacyPage() {
                 label="Source identifier"
                 detail="Which page or button you used to join (e.g. landing page hero, pricing page). This is an internal label, not a tracking pixel or cookie."
               />
+              <DataRow
+                label="Account information"
+                detail="If you sign in, we receive your user ID, username, and email address from Replit (our sign-in provider). We do not receive or store your password."
+              />
+              <DataRow
+                label="Uploaded content"
+                detail="Audio and video files you upload for processing, plus everything we generate from them: transcripts, show notes, social posts, cleaned audio, and other assets. This content may include the voices and statements of you and your guests."
+              />
+              <DataRow
+                label="Usage records"
+                detail="Episode counts, processing outcomes, and plan usage — used to enforce plan limits and operate the service."
+              />
+              <DataRow
+                label="Payment information"
+                detail="If you subscribe, payments are processed by Stripe. We never see or store your card number — we keep only your Stripe customer reference, plan, and subscription status."
+              />
             </ul>
             <p className="mt-4 text-zinc-500 text-sm">
-              We do <strong className="text-zinc-300">not</strong> collect your name, phone number,
-              payment details, or any other personal information at this stage. We do not use
-              third-party analytics cookies or fingerprinting on the waitlist form.
+              We do <strong className="text-zinc-300">not</strong> use third-party analytics
+              cookies, advertising trackers, or fingerprinting anywhere on the site.
             </p>
           </Section>
 
           {/* Purpose */}
           <Section heading="Why we collect it">
             <p>
-              Your email address is used for one purpose only: to notify you when PodLever opens
-              early access or launches new features. We will not use it for unrelated marketing,
-              sell it to third parties, or share it with advertisers.
+              Waitlist emails are used for one purpose only: to notify you about early access and
+              launches. Account, content, usage, and payment data are used solely to provide the
+              service — processing your episodes, generating your assets, enforcing plan limits,
+              and billing. We will not use your data for unrelated marketing, sell it to third
+              parties, or share it with advertisers.
+            </p>
+            <p className="mt-3">
+              <strong className="text-zinc-100">Your content is never used to train AI models.</strong>{" "}
+              Audio is transcribed and assets are generated via the OpenAI API, whose business
+              terms exclude API data from model training.
             </p>
           </Section>
 
@@ -126,21 +149,37 @@ export default function PrivacyPage() {
           {/* Data storage */}
           <Section heading="How we store your data">
             <p>
-              Waitlist submissions are stored in a Replit-managed PostgreSQL database hosted on
-              infrastructure located in the United States. Data is encrypted at rest and in
-              transit. Access is restricted to the application and the owner (Russell Nomer).
+              Application data (waitlist, accounts, transcripts, generated text) is stored in a
+              Replit-managed PostgreSQL database. Uploaded audio/video files and generated media
+              are stored in a private Google Cloud Storage bucket — objects are never publicly
+              readable and are served only through short-lived signed links issued to your
+              session. All infrastructure is located in the United States. Data is encrypted at
+              rest and in transit. Access is restricted to the application and the owner (Russell
+              Nomer).
             </p>
           </Section>
 
           {/* Retention */}
           <Section heading="How long we keep it">
-            <p>
-              We retain waitlist email addresses until one of the following occurs:
-            </p>
-            <ul className="mt-3 space-y-1.5 list-disc list-inside text-zinc-400">
-              <li>You request deletion (see below).</li>
-              <li>PodLever launches and you create a full account (at which point the waitlist record is superseded).</li>
-              <li>We determine that we will not launch — at which point all waitlist data will be deleted.</li>
+            <ul className="mt-1 space-y-1.5 list-disc list-inside text-zinc-400">
+              <li>
+                <strong className="text-zinc-300">Waitlist emails</strong> — until you request
+                deletion, create a full account (which supersedes the waitlist record), or we
+                determine we will not launch.
+              </li>
+              <li>
+                <strong className="text-zinc-300">Uploaded content and generated assets</strong> —
+                kept while your account is active so you can re-download them. You can request
+                deletion of any episode or your entire library at any time.
+              </li>
+              <li>
+                <strong className="text-zinc-300">Account and billing records</strong> — kept for
+                the life of your account, then only as long as tax and accounting law requires.
+              </li>
+              <li>
+                <strong className="text-zinc-300">Temporary processing copies</strong> — audio
+                passed to our processing pipeline exists only for the duration of the job.
+              </li>
             </ul>
           </Section>
 
@@ -169,13 +208,13 @@ export default function PrivacyPage() {
           {/* Third parties */}
           <Section heading="Third-party services">
             <p>
-              We do not sell or share your email address with third parties. The following
-              infrastructure providers process data on our behalf:
+              We do not sell or share your personal data. The following subprocessors handle data
+              on our behalf, each under their own privacy terms:
             </p>
             <ul className="mt-3 space-y-1.5 list-disc list-inside text-zinc-400">
               <li>
-                <strong className="text-zinc-300">Replit, Inc.</strong> — Hosts the application
-                and database. See{" "}
+                <strong className="text-zinc-300">Replit, Inc.</strong> — Application hosting,
+                database, and sign-in (authentication). See{" "}
                 <a
                   href="https://replit.com/privacy"
                   className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors"
@@ -186,7 +225,35 @@ export default function PrivacyPage() {
                 </a>
                 .
               </li>
+              <li>
+                <strong className="text-zinc-300">Google Cloud (Google LLC)</strong> — Private
+                object storage for uploaded and generated media files.
+              </li>
+              <li>
+                <strong className="text-zinc-300">OpenAI, L.L.C.</strong> — Transcription and
+                content generation via API. API inputs and outputs are not used to train OpenAI
+                models.
+              </li>
+              <li>
+                <strong className="text-zinc-300">Stripe, Inc.</strong> — Payment processing.
+                Card details go directly to Stripe and never touch our servers.
+              </li>
             </ul>
+            <p className="mt-3 text-zinc-500 text-sm">
+              We will update this list before adding any new subprocessor that handles your
+              content.
+            </p>
+          </Section>
+
+          {/* Breach notification */}
+          <Section heading="If something goes wrong">
+            <p>
+              If we discover a data breach that affects your personal data or your uploaded
+              content, we will notify affected users by email without undue delay — and within
+              any timeline required by applicable law (72 hours to supervisory authorities under
+              GDPR where it applies) — including what happened, what data was involved, and what
+              we are doing about it.
+            </p>
           </Section>
 
           {/* Changes */}

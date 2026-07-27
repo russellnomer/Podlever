@@ -54,15 +54,14 @@ import { db }                         from "@/db";
 import { episodes }                   from "@/db/schema";
 import { eq }                         from "drizzle-orm";
 import { randomUUID }                 from "crypto";
+import { isCronAuthorized }           from "@/lib/cron-auth";
 import { toFile }                     from "openai";
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 function isAuthorized(req: NextRequest): boolean {
-  const token  = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return token === secret;
+  // Constant-time, header-only (Security sprint PR #22).
+  return isCronAuthorized(req.headers.get("authorization"));
 }
 
 // ─── Asset generation prompts ─────────────────────────────────────────────────
