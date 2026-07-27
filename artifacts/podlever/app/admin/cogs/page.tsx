@@ -29,7 +29,11 @@ import { episodeCogs }       from "@/db/schema/episode-cogs";
 import { episodes }          from "@/db/schema";
 import { eq, sql, desc, gte, and } from "drizzle-orm";
 import { getJobCounts }      from "@/lib/job-queue";
-import { ArrowLeft, DollarSign, TrendingUp, Zap, AlertCircle } from "lucide-react";
+import { ArrowLeft, DollarSign, TrendingUp, Zap, AlertCircle, Building2, Trash2 } from "lucide-react";
+import { businessCosts }     from "@/db/schema/business-costs";
+import { users }             from "@/db/schema/users";
+import { getTier }           from "@/lib/tiers";
+import { addBusinessCostAction, removeBusinessCostAction } from "@/app/actions/business-costs.actions";
 
 // ─── Data fetchers ────────────────────────────────────────────────────────────
 
@@ -126,6 +130,38 @@ function StatCard({ label, value, sub, highlight }: {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/** Active fixed costs, newest first. */
+async function getFixedCosts() {
+  return db
+    .select()
+    .from(businessCosts)
+    .where(eq(businessCosts.active, true))
+    .orderBy(desc(businessCosts.createdAt));
+}
+
+/**
+ * Estimated MRR from current paid plans (pro/agency, annual-rate equivalent)
+ * plus estimated Stripe fees (2.9% + $0.30 per paying subscription/month).
+ * Refined once Stripe billing-period data flows through webhooks.
+ */
+async function getRevenueEstimate() {
+  const rows = await db
+    .select({ plan: users.plan, cnt: sql<string>`COUNT(*)::int` })
+    .from(users)
+    .where(sql`${users.plan} IN ('pro', 'agency')`)
+    .groupBy(users.plan);
+
+  let mrr = 0;
+  let payingSubs = 0;
+  for (const r of rows) {
+    const n = Number(r.cnt);
+    payingSubs += n;
+    mrr += n * getTier(r.plan).pricePerMonthAnnual;
+  }
+  const stripeFees = mrr * 0.029 + payingSubs * 0.30;
+  return { mrr, payingSubs, stripeFees };
+}
+
 export default async function CogsPage() {
   const session = await getAuthUser();
   try {
@@ -134,12 +170,17 @@ export default async function CogsPage() {
     redirect("/auth/login");
   }
 
-  const [summary, byStep, topEps, jobCounts] = await Promise.all([
+  const [summary, byStep, topEps, jobCounts, fixedCosts, revenue] = await Promise.all([
     getMonthlySummary(),
     getByStep(),
     getTopEpisodes(),
     getJobCounts().catch((): Record<string, number> => ({})),
+    getFixedCosts(),
+    getRevenueEstimate(),
   ]);
+
+  const fixedBurn = fixedCosts.reduce((t, c) => t + parseFloat(c.monthlyUsd), 0);
+  const netMargin = revenue.mrr - revenue.stripeFees - summary.thisMonthUsd - fixedBurn;
 
   const failedJobs  = (jobCounts["failed"] ?? 0);
   const runningJobs = (jobCounts["running"] ?? 0);
@@ -278,6 +319,94 @@ export default async function CogsPage() {
             </div>
           </section>
         )}
+
+        {/* Fixed monthly costs + true margin (founder request 2026-07-27) */}
+        <section className="mb-8">
+          <div className="mb-3 flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-gray-400" />
+            <h2 className="text-sm font-semibold text-gray-700">Fixed Monthly Costs &amp; True Margin</h2>
+          </div>
+
+          {/* Margin snapshot */}
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-xs text-gray-500">Est. MRR ({revenue.payingSubs} paid)</p>
+              <p className="text-lg font-bold text-gray-900">${revenue.mrr.toFixed(2)}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-xs text-gray-500">Est. Stripe fees</p>
+              <p className="text-lg font-bold text-gray-900">-${revenue.stripeFees.toFixed(2)}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-xs text-gray-500">AI COGS + fixed burn</p>
+              <p className="text-lg font-bold text-gray-900">-${(summary.thisMonthUsd + fixedBurn).toFixed(2)}</p>
+            </div>
+            <div className={`rounded-xl border p-4 ${netMargin >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
+              <p className="text-xs text-gray-500">Net this month</p>
+              <p className={`text-lg font-bold ${netMargin >= 0 ? "text-green-700" : "text-red-700"}`}>
+                {netMargin < 0 ? "-" : ""}${Math.abs(netMargin).toFixed(2)}
+              </p>
+            </div>
+          </div>
+
+          {/* Cost rows */}
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            {fixedCosts.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-gray-400">
+                No fixed costs yet — add Replit, GoDaddy, Google Workspace, Viktor, etc. below
+                (for annual bills enter the amount &divide; 12).
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {fixedCosts.map((c) => (
+                    <tr key={c.id} className="border-b border-gray-100 last:border-0">
+                      <td className="px-5 py-3 font-medium text-gray-900">{c.label}</td>
+                      <td className="px-5 py-3 text-xs text-gray-500">{c.category}</td>
+                      <td className="px-5 py-3 text-xs text-gray-400">{c.notes}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-gray-900">
+                        ${parseFloat(c.monthlyUsd).toFixed(2)}/mo
+                      </td>
+                      <td className="px-3 py-3">
+                        <form action={removeBusinessCostAction}>
+                          <input type="hidden" name="costId" value={c.id} />
+                          <button type="submit" title="Remove" className="text-gray-300 hover:text-red-500">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-50">
+                    <td className="px-5 py-3 font-semibold text-gray-700" colSpan={3}>Total fixed burn</td>
+                    <td className="px-5 py-3 text-right font-bold text-gray-900">${fixedBurn.toFixed(2)}/mo</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Add form */}
+          <form action={addBusinessCostAction} className="mt-3 flex flex-wrap items-center gap-2">
+            <input name="label" required placeholder="Label (e.g. Replit Core + Autoscale)"
+                   className="min-w-56 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <select name="category" className="rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700">
+              <option value="infrastructure">Infrastructure</option>
+              <option value="software">Software</option>
+              <option value="services">Services</option>
+              <option value="other">Other</option>
+            </select>
+            <input name="monthlyUsd" required type="number" step="0.01" min="0" placeholder="$/month"
+                   className="w-28 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input name="notes" placeholder="Notes (optional)"
+                   className="min-w-40 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <button type="submit"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+              Add cost
+            </button>
+          </form>
+        </section>
 
         {/* Margin note */}
         <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-5 py-4">

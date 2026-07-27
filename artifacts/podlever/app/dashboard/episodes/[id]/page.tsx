@@ -102,18 +102,24 @@ export default async function EpisodeDetailPage({
   const session = await getAuthUser();
   let ownerId: string;
   let plan: string | null = null;
+  let isOwner = false;
   try {
     const identity = await requireBetaAccess(session);
     ownerId = identity.userId;  // used to scope the episode query to this user only
     plan    = identity.plan ?? null;
+    isOwner = identity.isOwner;
   } catch {
     redirect("/auth/login");
   }
 
-  // Fetch episode (owner-scoped)
+  // Fetch episode. Regular users are strictly scoped to their own episodes;
+  // the owner may open ANY episode (admin views link across all accounts —
+  // previously those links 404'd for the founder, 2026-07-27).
   let episode;
   try {
-    episode = await episodeRepository.getEpisodeForOwner(episodeId, ownerId);
+    episode = isOwner
+      ? await episodeRepository.getEpisodeById(episodeId)
+      : await episodeRepository.getEpisodeForOwner(episodeId, ownerId!);
   } catch {
     notFound();
   }
