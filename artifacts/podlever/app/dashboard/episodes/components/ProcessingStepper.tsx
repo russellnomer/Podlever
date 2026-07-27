@@ -21,8 +21,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2, Circle, AlertTriangle, RotateCcw, ListOrdered } from "lucide-react";
-import { retryProcessingAction } from "@/app/actions/episode.actions";
+import { Loader2, CheckCircle2, Circle, AlertTriangle, RotateCcw, ListOrdered, Trash2 } from "lucide-react";
+import { retryProcessingAction, cancelAndArchiveEpisodeAction } from "@/app/actions/episode.actions";
 
 /** Pipeline stages in assembly-line order. Keys match episodes.processing_stage. */
 const STAGES: { key: string; label: string; detail: string }[] = [
@@ -56,6 +56,8 @@ export function ProcessingStepper({
   const router = useRouter();
   const [retryPending, startRetry] = useTransition();
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [cancelPending, startCancel] = useTransition();
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
     if (state !== "processing") return;
@@ -79,6 +81,26 @@ export function ProcessingStepper({
     });
   }
 
+  function handleCancel() {
+    // Two-click confirm: first click arms, second click executes.
+    if (!confirmCancel) {
+      setConfirmCancel(true);
+      setTimeout(() => setConfirmCancel(false), 5000);
+      return;
+    }
+    setRetryError(null);
+    startCancel(async () => {
+      const res = await cancelAndArchiveEpisodeAction(episodeId);
+      if (!res.ok) {
+        setRetryError(res.error ?? "Cancel failed.");
+        router.refresh();
+      } else {
+        router.push("/dashboard/episodes");
+        router.refresh();
+      }
+    });
+  }
+
   return (
     <div className="rounded-xl bg-white border border-gray-200 shadow-sm overflow-hidden">
       {/* Header strip */}
@@ -93,7 +115,7 @@ export function ProcessingStepper({
         <div className="min-w-0">
           <p className={`text-sm font-semibold ${error ? "text-red-800" : "text-amber-800"}`}>
             {error
-              ? `Hit a snag while ${STAGES[activeIdx]?.label.toLowerCase() ?? "processing"} — retrying automatically`
+              ? `Hit a snag while ${STAGES[activeIdx]?.label.toLowerCase() ?? "processing"}`
               : inLine
                 ? `In line — #${queuePosition + 1} on the assembly line`
                 : `${STAGES[activeIdx]?.label ?? "Processing"}…`}
@@ -107,18 +129,36 @@ export function ProcessingStepper({
           </p>
         </div>
         {error && (
-          <button
-            type="button"
-            onClick={handleRetry}
-            disabled={retryPending}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700
-                       disabled:opacity-60 px-3 py-1.5 text-xs font-semibold text-white transition-colors shrink-0"
-          >
-            {retryPending
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <RotateCcw className="w-3.5 h-3.5" />}
-            Retry now
-          </button>
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleRetry}
+              disabled={retryPending || cancelPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700
+                         disabled:opacity-60 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+            >
+              {retryPending
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <RotateCcw className="w-3.5 h-3.5" />}
+              Retry now
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={retryPending || cancelPending}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold
+                          transition-colors disabled:opacity-60 ${
+                confirmCancel
+                  ? "border-red-600 bg-red-600 text-white hover:bg-red-700"
+                  : "border-red-300 bg-white text-red-700 hover:bg-red-50"
+              }`}
+            >
+              {cancelPending
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Trash2 className="w-3.5 h-3.5" />}
+              {confirmCancel ? "Click again to confirm" : "Cancel & delete"}
+            </button>
+          </div>
         )}
       </div>
 

@@ -473,3 +473,56 @@ export async function finalizeDirectUploadAction(formData: FormData): Promise<Fi
     return { ok: false, error: `Upload failed: ${msg}` };
   }
 }
+
+/**
+ * cancelAndArchiveEpisodeAction — Owner-triggered "Cancel & delete" for an
+ * episode whose processing has gone sideways.
+ *
+ * Added 2026-07-26 after two episodes were left permanently stuck by the
+ * schema-drift incident: the owner needs a self-service escape hatch that
+ * (1) cancels any active jobs so the worker never resurrects them, and
+ * (2) archives the episode (soft delete — FSM allows any state → archived).
+ */
+export async function cancelAndArchiveEpisodeAction(
+  episodeId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  let userId: string;
+  try {
+    ({ userId } = await requireBetaUser());
+  } catch {
+    return { ok: false, error: "Not authorized. Please sign in again." };
+  }
+
+  try {
+    EpisodeIdSchema.parse(episodeId);
+    // Ownership check — throws if the episode isn't this user's.
+    const episode = await episodeRepository.getEpisodeForOwner(episodeId, userId);
+    if (episode.state === "archived") {
+      return { ok: true }; // already gone — idempotent
+    }
+
+    // 1. Kill any active jobs first so nothing revives the episode mid-archive.
+    const { cancelJobsForEpisode } = await import("@/lib/job-queue");
+    const cancelled = await cancelJobsForEpisode(episodeId);
+
+    // 2. Archive via the FSM (validated, atomic, optimistic-locked).
+    await episodeService.transitionEpisode(
+      {
+        episodeId,
+        currentFsmVersion: (episode as { fsmVersion: number }).fsmVersion,
+        toState:           "archived",
+        idempotencyKey:    `owner-cancel-${episodeId}-${Date.now()}`,
+        metadata:          `owner_cancelled; jobsCancelled=${cancelled}`,
+      },
+      userId,
+    );
+
+    console.log(JSON.stringify({
+      event: "episode.owner_cancelled", episodeId, jobsCancelled: cancelled,
+    }));
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cancel failed: ${msg}` };
+  }
+}
