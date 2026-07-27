@@ -21,11 +21,9 @@ import type { MetadataRoute } from "next";
  * SITE_URL — Same logic as layout.tsx; duplicated here to avoid
  * importing layout config (sitemap runs in the edge/node runtime at build time).
  */
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.REPLIT_DEV_DOMAIN
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : "https://podlever.replit.app");
+// Canonical origin — see app/layout.tsx note (2026-07-27): never derive from
+// REPLIT_DEV_DOMAIN; it is set in prod too and poisons sitemap URLs.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://podlever.com";
 
 /**
  * sitemap — Returns all public pages for search engine indexing.

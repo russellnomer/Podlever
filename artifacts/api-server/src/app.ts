@@ -56,7 +56,34 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// ── Security headers + CORS (OWASP baseline, 2026-07-27) ─────────────────────
+// The browser reaches this server same-origin through the workspace proxy at
+// podlever.com/api/*, so CORS can be restricted to our own origins. Requests
+// with no Origin header (server-to-server, curl, Stripe webhooks) are allowed.
+const ALLOWED_ORIGINS = [
+  "https://podlever.com",
+  "https://www.podlever.com",
+];
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin) || /\.replit\.dev$/.test(new URL(origin).hostname)) {
+        callback(null, true);
+      } else {
+        callback(null, false); // no CORS headers → browser blocks cross-origin use
+      }
+    },
+  }),
+);
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  next();
+});
+app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
