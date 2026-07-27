@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "jiTxyWz8_x762sED8hDnf"
+uri = "file://attached_assets/screencapture-podlever-dashboard-episodes-f1fbed59-ba6c-4f70-9_1785133627795.pdf"
+type = "pdf"
+title = "PodLever — Paws of Karma Episode Output Page"
