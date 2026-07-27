@@ -27,6 +27,7 @@
 
 import { readdirSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { verifyAndHealSchema, markBooted } from "./schema-guard";
 
 /** SQLSTATE codes meaning "this object already exists" — safe to skip. */
 const ALREADY_EXISTS = new Set([
@@ -58,6 +59,10 @@ function splitStatements(sql: string): string[] {
  * Never throws — logs and returns so server boot always completes.
  */
 export async function runStartupMigrations(): Promise<void> {
+  markBooted();
+  console.log(
+    `[startup-migrations] ═══════ PodLever boot ${new Date().toISOString()} — checking database schema ═══════`,
+  );
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     console.error("[startup-migrations] DATABASE_URL not set — skipping");
@@ -77,6 +82,22 @@ export async function runStartupMigrations(): Promise<void> {
 
   try {
     await client.connect();
+
+    // Log WHICH database we are connected to (host + db name, never
+    // credentials). During the 2026-07-26 incident, manual fixes went into a
+    // console that was NOT the database the app actually uses — this line
+    // makes that mismatch visible instantly.
+    try {
+      const host = new URL(databaseUrl).host;
+      const ident = await client.query(
+        `SELECT current_database() AS db, current_user AS usr;`,
+      );
+      console.log(
+        `[startup-migrations] connected to host=${host} db=${ident.rows[0]?.db} user=${ident.rows[0]?.usr}`,
+      );
+    } catch {
+      /* fingerprint is best-effort */
+    }
 
     // Serialise concurrent instances (Autoscale can boot several at once).
     await client.query("SELECT pg_advisory_lock($1, $2);", [LOCK_CLASS, LOCK_ID]);
@@ -143,6 +164,11 @@ export async function runStartupMigrations(): Promise<void> {
           ? `[startup-migrations] Database up to date (${files.length} migrations tracked)`
           : `[startup-migrations] ✅ Complete — ${ran} migration file(s) applied`,
       );
+
+      // A ledger records what WAS applied, not what IS true — something can
+      // drop columns after the fact (e.g. a stray `drizzle-kit push`).
+      // Verify the live schema against db/schema and re-add anything missing.
+      await verifyAndHealSchema(client, { heal: true });
     } finally {
       await client.query("SELECT pg_advisory_unlock($1, $2);", [LOCK_CLASS, LOCK_ID]);
     }
