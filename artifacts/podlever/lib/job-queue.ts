@@ -79,7 +79,19 @@ export async function enqueueJob(
  */
 export async function claimNextJob(): Promise<Job | null> {
   // Raw SQL needed for the SKIP LOCKED clause which Drizzle doesn't expose.
-  const rows = await db.execute<Job>(sql`
+  //
+  // ⚠️ HARD-LEARNED LESSON (prod incident 2026-07-27, "Unknown job type:
+  // undefined"): db.execute() returns RAW PostgreSQL rows with snake_case
+  // column names (job_type, max_attempts, …). Casting that to the Drizzle
+  // camelCase `Job` type compiles fine but is FALSE at runtime — every
+  // multi-word field reads as undefined, so the worker's switch on
+  // job.jobType hit the default branch for every job ever claimed.
+  //
+  // Fix: raw SQL does ONLY what Drizzle can't (SKIP LOCKED claim + status
+  // flip), returning just the id. The typed row then comes from a normal
+  // Drizzle select, which owns the snake_case→camelCase mapping.
+  // NEVER cast a db.execute() row to a Drizzle $inferSelect type.
+  const claimed = await db.execute<{ id: string }>(sql`
     WITH claimed AS (
       SELECT id FROM job_queue
       WHERE  status IN ('pending', 'retrying')
@@ -94,10 +106,20 @@ export async function claimNextJob(): Promise<Job | null> {
            started_at = now()
     FROM   claimed
     WHERE  job_queue.id = claimed.id
-    RETURNING job_queue.*
+    RETURNING job_queue.id
   `);
 
-  return (rows.rows[0] as Job | undefined) ?? null;
+  const claimedId = claimed.rows[0]?.id;
+  if (!claimedId) return null;
+
+  // Step 2: fetch the claimed row through the ORM for correct camelCase typing.
+  const [job] = await db
+    .select()
+    .from(jobQueue)
+    .where(eq(jobQueue.id, claimedId))
+    .limit(1);
+
+  return job ?? null;
 }
 
 // ─── Complete / Fail ──────────────────────────────────────────────────────────
