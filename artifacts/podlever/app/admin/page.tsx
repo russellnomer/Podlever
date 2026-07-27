@@ -23,6 +23,7 @@ import {
   BarChart3,
   DollarSign,
   ListVideo,
+  MessageSquareText,
   ShieldAlert,
 } from "lucide-react";
 
@@ -63,6 +64,13 @@ const MENU = [
     desc:  "Every episode across all users — status, owner, processing state",
     icon:  ListVideo,
     color: "text-purple-600 bg-purple-50",
+  },
+  {
+    href:  "/admin/feedback",
+    title: "Feedback Inbox",
+    desc:  "Bug reports and feedback submitted through the in-app widget",
+    icon:  MessageSquareText,
+    color: "text-amber-600 bg-amber-50",
   },
 ] as const;
 

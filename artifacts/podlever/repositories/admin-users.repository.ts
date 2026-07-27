@@ -165,6 +165,55 @@ class AdminUsersRepository {
   }
 
   /**
+   * getOwnerOverview — Usage + cost stats for the owner account(s).
+   *
+   * The founder asked to see his own activity alongside beta users
+   * ("I want to hold myself accountable too"). Returned separately from
+   * listUserOverview so the UI can render it without suspend/cap controls.
+   */
+  async getOwnerOverview(): Promise<
+    { displayName: string | null; usedThisMonth: number; lifetimeEpisodes: number; totalCostUsd: number; lastActivityAt: Date | null }[]
+  > {
+    const now         = new Date();
+    const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+    const owners = await db
+      .select({ userId: users.id, displayName: users.displayName })
+      .from(users)
+      .where(sql`${users.role} = 'owner'`);
+    if (owners.length === 0) return [];
+
+    const results = [];
+    for (const o of owners) {
+      const [usage] = await db
+        .select({
+          lifetime:  count(usageEvents.id),
+          thisMonth: sql<number>`
+            COUNT(*) FILTER (
+              WHERE ${usageEvents.createdAt} >= ${periodStart}
+            )::int`,
+          lastAt:    max(usageEvents.createdAt),
+        })
+        .from(usageEvents)
+        .where(and(eq(usageEvents.eventType, "episode_processed"), eq(usageEvents.userId, o.userId)));
+
+      const [cost] = await db
+        .select({ total: sum(episodeCogs.costUsd) })
+        .from(episodeCogs)
+        .where(eq(episodeCogs.userId, o.userId));
+
+      results.push({
+        displayName:      o.displayName,
+        usedThisMonth:    usage?.thisMonth ?? 0,
+        lifetimeEpisodes: usage?.lifetime != null ? Number(usage.lifetime) : 0,
+        totalCostUsd:     cost?.total != null ? parseFloat(String(cost.total)) : 0,
+        lastActivityAt:   usage?.lastAt ?? null,
+      });
+    }
+    return results;
+  }
+
+  /**
    * suspendUser — Revoke a user's access immediately.
    *
    * Sets suspended_at + reason, and bumps session_version so any existing
