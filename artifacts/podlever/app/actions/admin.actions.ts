@@ -191,3 +191,28 @@ export async function deleteWaitlistEntryAction(formData: FormData): Promise<nev
 
   redirect("/admin/waitlist?message=deleted");
 }
+
+/**
+ * recordLeadOutcomeAction — Owner logs why a lead didn't convert and what it
+ * would take to win them (lead-to-cash loop closure, 2026-07-27).
+ *
+ * Form fields: id, lostReason, nextStep. Empty strings clear the fields.
+ * Owner-only: the /admin/waitlist page is owner-gated, and this action
+ * re-verifies owner role like its siblings above.
+ */
+export async function recordLeadOutcomeAction(formData: FormData): Promise<void> {
+  const auth = await getAuthUser();
+  if (!auth) redirect("/auth/login");
+  requireOwnerFromSession(auth);
+
+  const id         = String(formData.get("id") ?? "");
+  const lostReason = String(formData.get("lostReason") ?? "").trim().slice(0, 1000) || null;
+  const nextStep   = String(formData.get("nextStep") ?? "").trim().slice(0, 1000) || null;
+  if (!id) redirect("/admin/waitlist?error=missing_id");
+
+  await waitlistRepository.recordOutcome(id, lostReason, nextStep);
+  console.log(JSON.stringify({ event: "admin.waitlist.outcome_recorded", id, hasReason: !!lostReason }));
+
+  const { revalidatePath } = await import("next/cache");
+  revalidatePath("/admin/waitlist");
+}

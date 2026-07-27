@@ -85,6 +85,13 @@
       "when": 1785133093322,
       "tag": "0011_feedback_kb_business_costs",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785134769333,
+      "tag": "0012_waitlist_funnel",
+      "breakpoints": true
     }
   ]
 }

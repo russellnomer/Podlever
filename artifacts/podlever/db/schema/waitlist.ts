@@ -101,6 +101,38 @@ export const waitlist = pgTable("waitlist", {
    */
   replitUserId: text("replit_user_id").unique(),
 
+  // ─── Lead-to-cash funnel timestamps (2026-07-27, founder request) ──────────
+  // Each stage is stamped once (COALESCE in the repository keeps the first
+  // occurrence) so the owner can see exactly where every lead sits and how
+  // long each stage took. All nullable — null means "hasn't happened yet".
+
+  /** When the owner marked this lead invited. */
+  invitedAt: timestamp("invited_at", { withTimezone: true }),
+
+  /** When the invitee signed in and claimed the invite (/verify-access). */
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+
+  /** When the user completed onboarding (status → active). */
+  activatedAt: timestamp("activated_at", { withTimezone: true }),
+
+  /** When the user created their first episode — real product activation. */
+  firstEpisodeAt: timestamp("first_episode_at", { withTimezone: true }),
+
+  /** When the user became a paying subscriber (Stripe checkout completed). */
+  convertedAt: timestamp("converted_at", { withTimezone: true }),
+
+  /**
+   * Why the lead didn't convert (owner-entered after a churn conversation).
+   * E.g. "price too high for hobby podcast", "needs video support".
+   */
+  lostReason: text("lost_reason"),
+
+  /**
+   * What it would take to win them — the owner's follow-up play.
+   * E.g. "offer monthly billing", "ping when video launches".
+   */
+  nextStep: text("next_step"),
+
   /** ISO timestamp of first submission. */
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

@@ -19,12 +19,12 @@
  * EnhancementResult — returned by every provider on success.
  *
  * @field buffer   - Enhanced audio bytes, always WAV for downstream compatibility
- * @field mimeType - Always "audio/wav" (normalized by every provider)
+ * @field mimeType - "audio/mpeg" (128k mono MP3, since 2026-07-27) or legacy "audio/wav"
  * @field provider - Human-readable provider name used for logging and COGS tracking
  */
 export interface EnhancementResult {
   buffer:   Buffer;
-  mimeType: "audio/wav";
+  mimeType: "audio/wav" | "audio/mpeg";
   provider: string;
 }
 
