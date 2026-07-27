@@ -147,7 +147,7 @@ export async function POST(
       m4v: "video/mp4",  mpeg: "video/mpeg",     mpg: "video/mpeg",
     };
     const mimeType = mimeMap[ext] ?? "audio/mpeg";
-    const isVideo  = mimeType.startsWith("video/");
+    // (isVideo no longer gates enhancement — providers strip video with -vn)
 
     // Fallback duration estimate (rough: 128kbps MP3 ≈ 16KB/s) — replaced by
     // the real ffprobe duration from prepareForTranscription when available.
@@ -159,18 +159,20 @@ export async function POST(
     let processedBuffer: Buffer = originalBuffer;
     let processedMime:   string = mimeType;
 
-    // Enhancement providers output uncompressed WAV, so cap it to inputs that
-    // won't balloon memory (large files / video skip straight to the
-    // speech-compression step — transcription quality is unaffected).
-    const ENHANCE_MAX_BYTES = 25 * 1024 * 1024;
-    const skipEnhancement   = isVideo || originalBuffer.byteLength > ENHANCE_MAX_BYTES;
+    // Enhancement providers strip video (-vn) and output compressed MP3
+    // (2026-07-27 — previously WAV-only, so video and >25MB inputs skipped
+    // enhancement entirely and the advertised "Cleaned Audio" deliverable
+    // was never produced). Cap now matches the 300MB upload limit; only
+    // truly oversized inputs skip.
+    const ENHANCE_MAX_BYTES = 300 * 1024 * 1024;
+    const skipEnhancement   = originalBuffer.byteLength > ENHANCE_MAX_BYTES;
     if (!skipEnhancement) await episodeRepository.setProcessingStage(episodeId, "enhancing");
 
     try {
       if (skipEnhancement) {
         console.log(JSON.stringify({
           event: "audio.enhance.skipped", episodeId,
-          reason: isVideo ? "video_input" : "large_input",
+          reason: "oversized_input",
           bytes: originalBuffer.byteLength,
         }));
         throw new SkipEnhancement();
@@ -180,7 +182,7 @@ export async function POST(
       processedMime   = enhanceResult.mimeType;
 
       // ── 4. Upload enhanced audio to GCS ────────────────────────────────────
-      const cleanedKey = `audio/${episodeId}/cleaned.wav`;
+      const cleanedKey = `audio/${episodeId}/cleaned.mp3`;
       await uploadFileBuffer(cleanedKey, processedBuffer, processedMime);
 
       // Update episode row with enhanced audio key
@@ -230,7 +232,10 @@ export async function POST(
     // original, audio or video) is compressed to speech-optimized mono MP3
     // first, and split into chunks when a compressed episode still exceeds
     // the cap (100+ minutes). Chunks are transcribed in order and joined.
-    const processedExt = processedMime === "audio/wav" ? "wav" : ext;
+    const processedExt =
+      processedMime === "audio/mpeg" ? "mp3"
+      : processedMime === "audio/wav" ? "wav"
+      : ext;
     const { chunks, durationSeconds } = await prepareForTranscription(processedBuffer, processedExt);
     if (durationSeconds) {
       estimatedAudioSeconds = Math.round(durationSeconds);

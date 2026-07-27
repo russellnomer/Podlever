@@ -418,7 +418,11 @@ export class WaitlistRepository {
   async linkReplitUserId(id: string, replitUserId: string): Promise<void> {
     await db
       .update(waitlist)
-      .set({ replitUserId, updatedAt: new Date() })
+      .set({
+        replitUserId,
+        claimedAt: sql`COALESCE(${waitlist.claimedAt}, now())`,
+        updatedAt: new Date(),
+      })
       .where(eq(waitlist.id, id));
   }
 
@@ -433,8 +437,46 @@ export class WaitlistRepository {
   async activateBetaUser(replitUserId: string): Promise<void> {
     await db
       .update(waitlist)
-      .set({ status: "active", updatedAt: new Date() })
+      .set({
+        status:      "active",
+        activatedAt: sql`COALESCE(${waitlist.activatedAt}, now())`,
+        updatedAt:   new Date(),
+      })
       .where(and(eq(waitlist.replitUserId, replitUserId), eq(waitlist.status, "invited")));
+  }
+
+  /**
+   * markFirstEpisode — Stamp the moment a user creates their FIRST episode.
+   *
+   * Real product activation for the lead-to-cash funnel (2026-07-27).
+   * Idempotent — COALESCE keeps the first timestamp. Best-effort caller:
+   * episode creation must never fail because of funnel bookkeeping.
+   *
+   * @param replitUserId - Replit OIDC sub claim
+   */
+  async markFirstEpisode(replitUserId: string): Promise<void> {
+    await db
+      .update(waitlist)
+      .set({
+        firstEpisodeAt: sql`COALESCE(${waitlist.firstEpisodeAt}, now())`,
+        updatedAt:      new Date(),
+      })
+      .where(eq(waitlist.replitUserId, replitUserId));
+  }
+
+  /**
+   * recordOutcome — Owner logs why a lead didn't convert and what it would
+   * take to win them (lead-to-cash loop closure, 2026-07-27).
+   *
+   * @param id         - UUID of the waitlist entry
+   * @param lostReason - Why they didn't buy (nullable to clear)
+   * @param nextStep   - What it would take to convert them (nullable to clear)
+   */
+  async recordOutcome(id: string, lostReason: string | null, nextStep: string | null): Promise<void> {
+    await db
+      .update(waitlist)
+      .set({ lostReason, nextStep, updatedAt: new Date() })
+      .where(eq(waitlist.id, id));
   }
 
   /**
@@ -448,7 +490,12 @@ export class WaitlistRepository {
   async markLeadInvited(id: string): Promise<WaitlistEntry> {
     const [updated] = await db
       .update(waitlist)
-      .set({ status: "invited", updatedAt: new Date() })
+      .set({
+        status:    "invited",
+        // Stamp the funnel stage once — re-inviting keeps the original date
+        invitedAt: sql`COALESCE(${waitlist.invitedAt}, now())`,
+        updatedAt: new Date(),
+      })
       .where(eq(waitlist.id, id))
       .returning();
     if (!updated) throw new Error(`Waitlist entry ${id} not found`);
