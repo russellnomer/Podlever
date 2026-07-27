@@ -24,6 +24,7 @@ import { episodeRepository } from "@/repositories";
 import { usageRepository }   from "@/repositories";
 import { CheckCircle2, Clock, Radio, Archive, Users, Mic } from "lucide-react";
 import type { Episode } from "@/db/schema";
+import { archiveEpisodeFromAdminAction } from "@/app/actions/episode.actions";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ export default async function AdminEpisodesPage({
           <div className="flex items-center gap-4">
             <span className="text-xs text-gray-400">{total} total</span>
             <Link
-              href="/dashboard/admin/usage"
+              href="/admin/users"
               className="flex items-center gap-1.5 text-sm text-indigo-600 hover:underline"
             >
               <Users className="w-3.5 h-3.5" />
@@ -178,6 +179,7 @@ export default async function AdminEpisodesPage({
                   <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Usage</th>
                   <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -207,6 +209,23 @@ export default async function AdminEpisodesPage({
                         {u ? <UsageBar used={u.used} limit={u.limit} /> : <span className="text-xs text-gray-300">—</span>}
                       </td>
                       <td className="px-5 py-3.5 text-xs text-gray-400">{created}</td>
+                      <td className="px-5 py-3.5">
+                        {episode.state !== "archived" ? (
+                          <form action={archiveEpisodeFromAdminAction}>
+                            <input type="hidden" name="episodeId" value={episode.id} />
+                            <button
+                              type="submit"
+                              title="Cancel any jobs and archive this episode (soft delete)"
+                              className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-500
+                                         hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors"
+                            >
+                              Archive
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-gray-300">-</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
