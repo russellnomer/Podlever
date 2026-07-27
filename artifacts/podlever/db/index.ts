@@ -44,6 +44,26 @@ const pool = new Pool({
   max: 5,
 });
 
+// ─── Startup-migration fallback ───────────────────────────────────────────────
+// instrumentation.ts register() is the primary trigger for runtime migrations,
+// but during the 2026-07-26 incident deployment logs showed register() never
+// ran (platform-dependent). This module loads before the FIRST query in every
+// runtime path, so kicking migrations here guarantees the schema is checked
+// exactly once per process no matter what. runStartupMigrations() is
+// advisory-locked, idempotent, and never throws.
+const globalMigrations = globalThis as unknown as {
+  __podleverMigrationsKicked?: boolean;
+};
+// NOTE: literal NEXT_RUNTIME === "nodejs" check — webpack inlines the value
+// per-bundle and dead-code-eliminates this import from any Edge bundle
+// (startup-migrations uses node:fs/pg, which cannot compile for Edge).
+if (process.env.NEXT_RUNTIME === "nodejs" && !globalMigrations.__podleverMigrationsKicked) {
+  globalMigrations.__podleverMigrationsKicked = true;
+  import("../lib/startup-migrations")
+    .then(({ runStartupMigrations }) => runStartupMigrations())
+    .catch((err) => console.error("[startup-migrations] fallback kick failed:", err));
+}
+
 // ─── Drizzle instance ─────────────────────────────────────────────────────────
 
 /**
