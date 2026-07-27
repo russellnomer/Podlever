@@ -24,14 +24,17 @@
  * silently failing on the first login attempt.
  */
 export async function register(): Promise<void> {
-  // Only run the production checks in the Node.js runtime (not Edge).
-  // process.env.NEXT_RUNTIME is "nodejs" or "edge"; absent in Node.js 18+ default.
-  if (
-    process.env.NEXT_RUNTIME === "edge" ||
-    process.env.NODE_ENV !== "production"
-  ) {
-    return;
-  }
+  // Edge runtime: nothing to do (and node-only imports below cannot load there).
+  if (process.env.NEXT_RUNTIME === "edge") return;
+
+  // ALWAYS log on entry — during the 2026-07-26 schema-drift incident we
+  // could not tell from deployment logs whether register() ran at all.
+  // (Earlier code gated everything on NODE_ENV === "production": if the
+  // platform injects a non-standard NODE_ENV, `next start` does NOT override
+  // it and register() silently did nothing. Never gate on NODE_ENV here.)
+  console.log(
+    `[startup] instrumentation register() invoked — NODE_ENV=${process.env.NODE_ENV ?? "(unset)"} NEXT_RUNTIME=${process.env.NEXT_RUNTIME ?? "(unset)"}`,
+  );
 
   // ── Database migrations (runtime, not build time) ─────────────────────────
   // Replit Autoscale builds run in the workspace environment where
