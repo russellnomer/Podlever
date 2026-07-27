@@ -1,11 +1,11 @@
 /**
- * app/api/billing/checkout/route.ts — Stripe Checkout session creator
+ * app/rpc/billing/checkout/route.ts — Stripe Checkout session creator
  *
  * Part of: PodLever
  * Created: 2026-07-19
  * Last modified: 2026-07-19 by agent (Task #14 — Stripe subscriptions)
  *
- * POST /api/billing/checkout
+ * POST /rpc/billing/checkout
  *
  * Creates a Stripe Checkout session for the authenticated user.
  * Calls Stripe directly — no intermediate API server hop needed.

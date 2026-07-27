@@ -72,7 +72,7 @@ export function AssetPanel({
           {/* PDF download — guest media pack only */}
           {showPdfButton && (
             <a
-              href={`/api/episodes/${episodeId}/guest-pack`}
+              href={`/rpc/episodes/${episodeId}/guest-pack`}
               download
               className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium
                          text-indigo-600 hover:bg-indigo-50 transition-colors"

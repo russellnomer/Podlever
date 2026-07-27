@@ -1,16 +1,16 @@
 /**
- * app/api/episodes/[id]/share-token/route.ts — Generate shareable episode link
+ * app/rpc/episodes/[id]/share-token/route.ts — Generate shareable episode link
  *
  * Part of: PodLever
  * Created: 2026-07-19
  * Last modified: 2026-07-19 by agent (Board priority — viral shareable links)
  *
- * Route: POST /api/episodes/[id]/share-token
+ * Route: POST /rpc/episodes/[id]/share-token
  *
  * Generates a share token on the episode (UUID). The token enables the public
  * read-only page at /share/[token]. Idempotent — returns existing token if set.
  *
- * DELETE /api/episodes/[id]/share-token — revokes sharing (sets token to null).
+ * DELETE /rpc/episodes/[id]/share-token — revokes sharing (sets token to null).
  *
  * Auth: iron-session. Owner-only.
  * The public /share/[token] page requires no auth — that's intentional (viral).

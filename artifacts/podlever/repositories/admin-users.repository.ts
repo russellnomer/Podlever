@@ -50,6 +50,8 @@ export interface AdminUserOverview {
   suspendedReason:    string | null;
   /** True when accessExpiresAt is set and in the past. */
   accessExpired:      boolean;
+  /** Replit user ID — shown so the owner can add accounts to OWNER_REPLIT_USER_ID. */
+  externalIdentityId: string;
   /** Deal registration info from the linked waitlist entry (matched by Replit user ID). */
   email:              string | null;
   dealNotes:          string | null;
@@ -154,6 +156,7 @@ class AdminUsersRepository {
         suspendedAt:        u.suspendedAt,
         suspendedReason:    u.suspendedReason,
         accessExpired:      expired,
+        externalIdentityId: u.externalIdentityId,
         email:              wl?.email ?? null,
         dealNotes:          wl?.notes ?? null,
         waitlistId:         wl?.id ?? null,

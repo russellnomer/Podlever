@@ -192,7 +192,7 @@ export default async function BillingPage({
           {isPaid && user?.stripeCustomerId && (
             <div className="mt-5 pt-5 border-t border-gray-100">
               <a
-                href="/api/billing/portal-redirect"
+                href="/rpc/billing/portal-redirect"
                 className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5
                            text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >

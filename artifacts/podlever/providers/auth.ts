@@ -252,6 +252,26 @@ export function getOwnerReplitUserId(): string {
 }
 
 /**
+ * getOwnerReplitUserIds — All Replit user IDs authorized as owner.
+ *
+ * OWNER_REPLIT_USER_ID accepts a comma-separated list so the founder's
+ * multiple Replit accounts (e.g. personal gmail + business login) all
+ * receive role "owner". Whitespace around entries is tolerated:
+ *   OWNER_REPLIT_USER_ID=19531679, 12345678
+ *
+ * Added after the 2026-07-27 incident where the founder's second account
+ * was treated as a free-trial user and paywalled on his own product.
+ *
+ * @returns Non-empty owner ID strings (may be a single-element array)
+ */
+export function getOwnerReplitUserIds(): string[] {
+  return getOwnerReplitUserId()
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+}
+
+/**
  * getCallbackUrl — Build the OIDC callback URL for this environment.
  *
  * The function uses two entirely separate resolution paths based on NODE_ENV to

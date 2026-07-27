@@ -7,7 +7,7 @@
  *
  * Async Server Component. On each request:
  *   1. Reads the `?upgrade=` search param — if present and the user is
- *      logged in, redirects immediately to /api/billing/upgrade so the
+ *      logged in, redirects immediately to /rpc/billing/upgrade so the
  *      billing dashboard "Upgrade" links never touch client JS.
  *   2. Fetches live Stripe price IDs by querying products filtered on
  *      metadata.plan_slug — no hardcoded price IDs.
@@ -24,7 +24,7 @@
  * - CheckoutButton is a Client Component — reads localStorage "podlever_billing_period"
  *   to pick the right Stripe price ID (annual vs monthly) without prop drilling.
  * - The `?upgrade=pro|agency` flow auto-fires a server-side redirect to
- *   /api/billing/upgrade — no client JS needed for billing-dashboard CTAs.
+ *   /rpc/billing/upgrade — no client JS needed for billing-dashboard CTAs.
  * - If Stripe product fetch fails, `proPrices` / `agencyPrices` will be null and
  *   the cards fall back to a mailto CTA (graceful degradation).
  */
@@ -174,7 +174,7 @@ async function fetchTierPrices(slug: string): Promise<TierPrices | null> {
  * PricingPage — Founding Member pricing with live Stripe Checkout (Server Component).
  *
  * Handles the `?upgrade=<plan>` auto-trigger: logged-in users who arrive from
- * the billing dashboard are redirected server-side to /api/billing/upgrade
+ * the billing dashboard are redirected server-side to /rpc/billing/upgrade
  * so no client JS is required for the upgrade CTA.
  */
 export default async function PricingPage({
@@ -193,7 +193,7 @@ export default async function PricingPage({
     if (user) {
       // Pass through the billing period if the dashboard sent one.
       const billingParam = params.billing ? `&billing=${params.billing}` : "";
-      redirect(`/api/billing/upgrade?plan=${params.upgrade}${billingParam}`);
+      redirect(`/rpc/billing/upgrade?plan=${params.upgrade}${billingParam}`);
     }
     // Not logged in — fall through and render the page normally.
     // The user will see the card and can log in before clicking Checkout.
