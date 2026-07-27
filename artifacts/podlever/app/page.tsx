@@ -311,22 +311,24 @@ function OutputSection() {
     {
       icon: "📝",
       title: "Full Transcript",
-      description: "Speaker-diarized, timestamped, searchable. JSON + plain text formats.",
+      description: "Clean, verbatim, searchable text — ready to publish or repurpose.",
     },
     {
       icon: "▶️",
       title: "YouTube Cut",
-      description: "Full-length edited video with chapters, intro, and outro — ready to upload.",
+      description: "Full-length video with auto-generated chapters — ready to upload.",
+      comingSoon: true,
     },
     {
       icon: "📱",
       title: "Vertical Clip",
       description: "Best 60 seconds reformatted for TikTok, Reels, and Shorts.",
+      comingSoon: true,
     },
     {
       icon: "📋",
       title: "Show Notes",
-      description: "Structured markdown with key takeaways, timestamps, and guest links.",
+      description: "Structured markdown with summary, key takeaways, topics, and notable quotes.",
     },
     {
       icon: "✍️",
@@ -341,7 +343,7 @@ function OutputSection() {
     {
       icon: "🎁",
       title: "Guest Media Pack",
-      description: "Professional asset bundle — clip, bio, quotes, promo graphics — ready to send.",
+      description: "Bio, key topics, quotes, and a suggested announcement — branded PDF, ready to send.",
     },
   ] as const;
 
@@ -359,8 +361,9 @@ function OutputSection() {
             Eight assets from one recording
           </h2>
           <p className="max-w-xl mx-auto text-zinc-400 text-lg leading-relaxed">
-            Upload your raw file. PodLever generates your complete content suite —
-            no editing software, no contractors, no waiting.
+            Upload your raw file. PodLever generates your content suite —
+            no editing software, no contractors, no waiting. Six assets ship
+            today; video cuts are in active development.
           </p>
         </div>
 
@@ -381,6 +384,11 @@ function OutputSection() {
                   <span className="text-xs font-mono text-zinc-600">
                     {String(i + 1).padStart(2, "0")}
                   </span>
+                  {"comingSoon" in output && output.comingSoon && (
+                    <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-amber-400/90 border border-amber-500/30 bg-amber-500/10 rounded-full px-2 py-0.5">
+                      In development
+                    </span>
+                  )}
                 </div>
                 <h3 className="text-white font-semibold">{output.title}</h3>
                 <p className="text-zinc-500 text-sm leading-relaxed">{output.description}</p>
