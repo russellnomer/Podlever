@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { WebhookHandlers } from "./webhookHandlers";
@@ -75,14 +76,27 @@ app.use(
     },
   }),
 );
-app.use((_req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
-  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
-  next();
-});
+// Helmet — industry-standard OWASP secure headers for the API surface.
+// This server only returns JSON (and the Stripe webhook ACK), so the CSP is
+// locked to default-src 'none'; frame-ancestors 'none'. Helmet also sets
+// nosniff, X-Frame-Options, HSTS, Referrer-Policy, Cross-Origin-* policies,
+// and removes x-powered-by.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    strictTransportSecurity: {
+      maxAge: 63072000,
+      includeSubDomains: true,
+    },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    xFrameOptions: { action: "deny" },
+  }),
+);
 app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
