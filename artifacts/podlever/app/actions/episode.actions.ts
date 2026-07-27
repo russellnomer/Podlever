@@ -177,6 +177,17 @@ export async function uploadEpisodeAction(formData: FormData): Promise<never> {
     throw new Error(`Audio file exceeds the 25 MB limit (got ${(audioFile.size / 1024 / 1024).toFixed(1)} MB).`);
   }
 
+  // ── Magic-byte content check (extension + MIME are attacker-controlled) ────
+  {
+    const { validateMediaMagicBytes } = await import("@/lib/magic-bytes");
+    const ext  = audioFile.name.split(".").pop()?.toLowerCase() ?? "";
+    const head = new Uint8Array(await audioFile.slice(0, 64).arrayBuffer());
+    const magic = validateMediaMagicBytes(head, ext);
+    if (!magic.ok) {
+      throw new Error(`Upload rejected: ${magic.reason}`);
+    }
+  }
+
   // ── Create episode (draft) ──────────────────────────────────────────────────
   const episode = await episodeService.createEpisode({ title }, userId);
   const episodeId = episode.id;
@@ -430,6 +441,25 @@ export async function finalizeDirectUploadAction(formData: FormData): Promise<Fi
     }
     if (sizeBytes > MAX_DIRECT_BYTES) {
       return { ok: false, error: `File is too large (${(sizeBytes / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_DIRECT_BYTES / 1024 / 1024} MB.` };
+    }
+
+    // ── Magic-byte content check (ranged read — first 64 bytes only) ────────
+    // Extension and Content-Type are attacker-controlled; the object's actual
+    // leading bytes are not. Reject anything that isn't a real media container
+    // before it reaches the ffmpeg/transcription pipeline.
+    {
+      const { readObjectHead }         = await import("@/lib/storage");
+      const { validateMediaMagicBytes } = await import("@/lib/magic-bytes");
+      const ext  = storageKey.split(".").pop()?.toLowerCase() ?? "";
+      const head = await readObjectHead(storageKey, 64);
+      if (!head) {
+        return { ok: false, error: "The uploaded file could not be read from storage. Please try again." };
+      }
+      const magic = validateMediaMagicBytes(new Uint8Array(head), ext);
+      if (!magic.ok) {
+        console.error(JSON.stringify({ event: "episode.finalize.magic_byte_reject", storageKey, reason: magic.reason }));
+        return { ok: false, error: `Upload rejected: ${magic.reason}` };
+      }
     }
 
     // ── Create episode + asset, transition, enqueue ─────────────────────────
