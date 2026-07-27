@@ -30,11 +30,11 @@ import "./globals.css";
  * Falls back to the dev domain in development.
  * Used for sitemap, canonical URLs, and absolute OG image URLs.
  */
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.REPLIT_DEV_DOMAIN
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : "https://podlever.replit.app");
+// NOTE (2026-07-27): previously preferred REPLIT_DEV_DOMAIN, which is ALSO set
+// in production deployments — canonical/OG/sitemap URLs pointed at an ephemeral
+// *.replit.dev host and told search engines the wrong canonical home.
+// The custom domain is the canonical origin; NEXT_PUBLIC_SITE_URL overrides.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://podlever.com";
 
 // ─── Root metadata ────────────────────────────────────────────────────────────
 
