@@ -6,3 +6,9 @@ id = "jiTxyWz8_x762sED8hDnf"
 uri = "file://attached_assets/screencapture-podlever-dashboard-episodes-f1fbed59-ba6c-4f70-9_1785133627795.pdf"
 type = "pdf"
 title = "PodLever — Paws of Karma Episode Output Page"
+
+[[outputs]]
+id = "PJLQiJlwXKuxlJAZSpq8J"
+uri = "file://attached_assets/PodLever_Promo_1785259326236.mp4"
+type = "video"
+title = "PodLever — Social Media Promo Video"
