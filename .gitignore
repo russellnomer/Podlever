@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.env
+artifacts/podlever/.next/cache/webpack/server-production/0.pack
+.local/share/pnpm/store/v10/files/cd/c33ac694c8defc49e9a7d8a30d85b2bced99ca69a10417db4ee271cfbb8ec021072550687e9c705b20eee90835aed68a039f6204fcbf53ec9d49885393f4e2
+.local/share/pnpm/store/v10/files/e3/4ffbc8559385c35372ce123c6e48820cc5b5bb599ee49acf57fe70cad0568ea1a95cb3b3123f99759c31df1020954f201ecebea05362202e47c91a1bc99bec
+node_modules/.pnpm/@next+swc-linux-x64-gnu@15.5.21/node_modules/@next/swc-linux-x64-gnu/next-swc.linux-x64-gnu.node
