@@ -1,21 +1,18 @@
 /**
- * app/rpc/episodes/[id]/zip/route.ts — Bulk ZIP download for all episode assets
+ * app/rpc/episodes/[id]/transcript-pdf/route.ts — Transcript PDF download
  *
  * Part of: PodLever
- * Created: 2026-07-19
- * Last modified: 2026-07-19 by agent (Board priority — ZIP bulk export)
+ * Created: 2026-07-28
+ * Last modified: 2026-07-28 (fix: users expected a PDF export from the episode page)
  *
- * Route: GET /rpc/episodes/[id]/zip
+ * Route: GET /rpc/episodes/[id]/transcript-pdf
  *
- * Packages all text assets + audio into a downloadable ZIP.
- * Streams the response as application/zip with a Content-Disposition header.
+ * Generates the transcript PDF on demand (small payload; no GCS involved)
+ * and returns it with a proper Content-Disposition filename.
  *
  * Auth: iron-session. Owner-only.
- * Rate: no explicit rate limit — each call fetches audio from GCS so it is
- *       naturally self-throttling (slow to respond for large files).
  *
  * SECURITY: episodeId validated as UUID; episode fetched owner-scoped.
- *           Audio signed URL is not logged.
  */
 
 import { type NextRequest, NextResponse } from "next/server";
@@ -24,12 +21,12 @@ import { getIronSession }                  from "iron-session";
 import { getSessionOptions }               from "@/providers/auth";
 import { requireBetaAccess }               from "@/providers/owner-guard";
 import { episodeRepository, assetRepository } from "@/repositories";
-import { buildEpisodeZip }                 from "@/lib/zip-export";
+import { generateTranscriptPdf }           from "@/lib/pdf/transcript";
 import { z }                               from "zod";
 import type { PodLeverSession }            from "@/providers/auth";
 
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -61,15 +58,23 @@ export async function GET(
     return NextResponse.json({ error: "Episode is not ready yet" }, { status: 409 });
   }
 
-  // ── Build ZIP ─────────────────────────────────────────────────────────────
-  try {
-    const assets       = await assetRepository.listAssetsForEpisode(episodeId);
-    // ?audio=0 → text-only ZIP (fast, tiny; used as automatic client fallback
-    // when the full ZIP fails on very large audio files).
-    const includeAudio = req.nextUrl.searchParams.get("audio") !== "0";
-    const zipBuffer    = await buildEpisodeZip({ episode, assets, includeAudio });
+  // ── Find transcript asset ─────────────────────────────────────────────────
+  const assets     = await assetRepository.listAssetsForEpisode(episodeId);
+  const transcript = assets.find((a) => a.assetType === "transcript" && a.content);
+  if (!transcript?.content) {
+    return NextResponse.json({ error: "No transcript available for this episode" }, { status: 404 });
+  }
 
-    // Slugify title for the filename
+  // ── Build PDF ─────────────────────────────────────────────────────────────
+  try {
+    const pdfBuffer = await generateTranscriptPdf({
+      title:      episode.title,
+      uploadedAt: episode.createdAt
+        ? new Date(episode.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+        : null,
+      transcript: transcript.content,
+    });
+
     const slug = episode.title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -77,26 +82,26 @@ export async function GET(
       .slice(0, 60) || episodeId;
 
     console.log(JSON.stringify({
-      event:     "episode.zip_download",
+      event:     "episode.transcript_pdf_download",
       episodeId,
-      bytes:     zipBuffer.byteLength,
+      bytes:     pdfBuffer.byteLength,
     }));
 
-    return new NextResponse(new Uint8Array(zipBuffer), {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       status:  200,
       headers: {
-        "Content-Type":        "application/zip",
-        "Content-Disposition": `attachment; filename="podlever-${slug}.zip"`,
-        "Content-Length":      String(zipBuffer.byteLength),
+        "Content-Type":        "application/pdf",
+        "Content-Disposition": `attachment; filename="podlever-${slug}-transcript.pdf"`,
+        "Content-Length":      String(pdfBuffer.byteLength),
         "Cache-Control":       "private, no-store",
       },
     });
   } catch (err) {
     console.error(JSON.stringify({
-      event:     "episode.zip_error",
+      event:     "episode.transcript_pdf_error",
       episodeId,
       error:     String(err),
     }));
-    return NextResponse.json({ error: "Failed to build ZIP" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to build transcript PDF" }, { status: 500 });
   }
 }
