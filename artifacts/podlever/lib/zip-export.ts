@@ -30,6 +30,7 @@
 import "server-only";
 import JSZip               from "jszip";
 import { downloadAudioBuffer } from "@/lib/storage";
+import { generateTranscriptPdf } from "@/lib/pdf/transcript";
 import type { Asset }      from "@/db/schema";
 
 // ─── Asset type → filename map ────────────────────────────────────────────────
@@ -55,6 +56,9 @@ export interface ZipInput {
   };
   /** Latest-version assets for this episode. */
   assets: Asset[];
+  /** Include original/cleaned audio (default true). Text-only ZIPs are much
+   *  smaller and cannot fail on large-audio memory limits. */
+  includeAudio?: boolean;
 }
 
 /**
@@ -95,8 +99,29 @@ export async function buildEpisodeZip(input: ZipInput): Promise<Buffer> {
     folder.file(filename, asset.content, { date: new Date(asset.createdAt) });
   }
 
+  // ── Transcript PDF ───────────────────────────────────────────────────────────
+  // Users expect a PDF alongside the plain-text transcript (support request,
+  // 2026-07-28). Failure to render is non-fatal — the txt is still included.
+  const transcriptAsset = latestByType.get("transcript");
+  if (transcriptAsset?.content) {
+    try {
+      const pdf = await generateTranscriptPdf({
+        title:      episode.title,
+        transcript: transcriptAsset.content,
+      });
+      folder.file("transcript.pdf", pdf);
+    } catch (err) {
+      console.warn(JSON.stringify({
+        event:     "zip_export.transcript_pdf_skip",
+        episodeId: episode.id,
+        error:     String(err),
+      }));
+    }
+  }
+
   // ── Original audio ───────────────────────────────────────────────────────────
-  if (episode.audioStorageKey) {
+  const includeAudio = input.includeAudio !== false;
+  if (includeAudio && episode.audioStorageKey) {
     try {
       const ext    = episode.audioStorageKey.split(".").pop() ?? "mp3";
       const buffer = await downloadAudioBuffer(episode.audioStorageKey);
@@ -112,7 +137,7 @@ export async function buildEpisodeZip(input: ZipInput): Promise<Buffer> {
   }
 
   // ── Cleaned audio (enhanced output) ───────────────────────────────────────────
-  if (episode.cleanedAudioStorageKey) {
+  if (includeAudio && episode.cleanedAudioStorageKey) {
     try {
       const buffer = await downloadAudioBuffer(episode.cleanedAudioStorageKey);
       const cleanedExt = episode.cleanedAudioStorageKey.split(".").pop() ?? "mp3";

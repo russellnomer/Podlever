@@ -25,10 +25,11 @@ import { getSignedDownloadUrl }    from "@/lib/storage";
 import { ProcessingStepper }       from "../components/ProcessingStepper";
 import { after }                    from "next/server";
 import { AssetPanel }              from "./components/AssetPanel";
+import { DownloadAllButton } from "./components/DownloadAllButton";
 import { ShareButton }             from "./components/ShareButton";
 import {
   ArrowLeft, CheckCircle2, Clock, Radio,
-  Download, Mic2, Archive, Sparkles, DollarSign,
+  Download, Mic2, Archive, Sparkles, DollarSign, FileText,
 } from "lucide-react";
 import type { Asset, AssetType } from "@/db/schema";
 
@@ -231,19 +232,20 @@ export default async function EpisodeDetailPage({
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               <StateBadge state={episode.state} />
-              {/* ZIP download — all assets in one click */}
+              {/* Transcript PDF — one-click branded PDF */}
               {isReady && (
                 <a
-                  href={`/rpc/episodes/${episodeId}/zip`}
-                  download
+                  href={`/rpc/episodes/${episodeId}/transcript-pdf`}
                   className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium
                              text-gray-700 hover:bg-gray-200 transition-colors"
-                  title="Download all assets as ZIP"
+                  title="Download transcript as PDF"
                 >
-                  <Archive className="w-4 h-4" />
-                  Download all
+                  <FileText className="w-4 h-4" />
+                  Transcript PDF
                 </a>
               )}
+              {/* ZIP download — all assets in one click, with visible errors */}
+              {isReady && <DownloadAllButton episodeId={episodeId} />}
             </div>
           </div>
 
