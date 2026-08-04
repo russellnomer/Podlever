@@ -27,9 +27,10 @@ import { episodeRepository, assetRepository, usageRepository } from "@/repositor
 import { openai, MODELS }          from "@/lib/openai";
 import { recordCogs, estimateTokenCost } from "@/lib/cogs";
 import { db }                      from "@/db";
-import { usageEvents }             from "@/db/schema";
+import { usageEvents, users }      from "@/db/schema";
 import { and, eq, count }          from "drizzle-orm";
 import type { AssetType }          from "@/db/schema";
+import { buildPersonaBlock, resolvePersona } from "@/lib/personas";
 
 // ─── Plan limits ──────────────────────────────────────────────────────────────
 
@@ -39,9 +40,12 @@ const REGEN_LIMITS: Record<string, number> = {
   agency: Infinity,
 };
 
-// ─── System prompts (duplicated from process route for now) ───────────────────
+// ─── System prompts ───────────────────────────────────────────────────────────
+// Shared base prompts — persona block prepended at runtime.
+// See lib/personas.ts for persona definitions; see process/route.ts for
+// the canonical versions of these prompts. Keep in sync.
 
-const SYSTEM_PROMPTS: Record<string, string> = {
+const BASE_PROMPTS: Record<string, string> = {
   show_notes: `You are a podcast producer writing structured show notes.
 Given a podcast transcript, produce clean, reader-friendly show notes in markdown:
 - An engaging 2-3 sentence episode summary
@@ -51,26 +55,26 @@ Given a podcast transcript, produce clean, reader-friendly show notes in markdow
 Return only the markdown — no preamble, no meta-commentary.`,
 
   blog_post: `You are a content strategist converting a podcast episode into a long-form blog post.
-Given a transcript, write a compelling 600-900 word blog post:
+Given a transcript, write a compelling blog post following the AUDIENCE & TONE rules above:
 - An SEO-friendly headline (H1)
 - An engaging introduction that hooks the reader
 - 3-4 well-developed sections (H2 subheadings)
 - A strong closing paragraph with a call to action
-Write in a professional but conversational tone. Return only the blog post markdown.`,
+Respect the length cap in the AUDIENCE CONTEXT. Return only the blog post markdown.`,
 
   social_post: `You are a social media manager writing promotional copy for a podcast episode.
-Given a transcript, produce THREE social media posts in this exact format:
+Given a transcript, produce THREE social media posts using the platform-specific format rules above:
 
-**LinkedIn (professional, 150-200 words):**
-[post]
+**LinkedIn:**
+[post — follow LinkedIn format rules from AUDIENCE CONTEXT]
 
-**Twitter/X (punchy, under 280 chars):**
-[post]
+**Twitter/X:**
+[post — follow Twitter/X format rules from AUDIENCE CONTEXT]
 
-**Instagram caption (engaging, 100-150 words + 5 relevant hashtags):**
-[post]
+**Instagram caption:**
+[post — follow Instagram format rules from AUDIENCE CONTEXT]
 
-Return only the three posts in that format — no other text.`,
+Return only the three posts in that exact format — no other text.`,
 
   guest_media_pack: `You are a podcast producer creating a guest media pack.
 Given a transcript, produce a structured guest media pack in markdown:
@@ -111,6 +115,22 @@ export async function regenerateAsset(
 ): Promise<RegenerateResult> {
   // ── Auth ───────────────────────────────────────────────────────────────────
   const { userId, plan } = await requireBetaUser();
+
+  // Fetch user persona for audience-tailored regeneration
+  const [userRow] = await db
+    .select({ audiencePersona: users.audiencePersona })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const persona      = resolvePersona(userRow?.audiencePersona ?? "general", plan ?? "free");
+  const personaBlock = buildPersonaBlock(persona);
+  // Build audience-aware system prompts for this regeneration
+  const SYSTEM_PROMPTS = Object.fromEntries(
+    Object.entries(BASE_PROMPTS).map(([key, base]) => [
+      key,
+      `${personaBlock}\n\n---\n\nCONTENT TYPE INSTRUCTIONS:\n${base}`,
+    ]),
+  );
 
   // ── Plan gate ──────────────────────────────────────────────────────────────
   const limit = REGEN_LIMITS[plan ?? "free"] ?? 0;

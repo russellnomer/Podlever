@@ -40,6 +40,7 @@ export function DashboardHeader({ displayName, isOwner }: DashboardHeaderProps) 
           </Link>
           <div className="hidden sm:flex items-center gap-4 text-sm text-gray-600">
             <Link href="/dashboard/episodes" className="hover:text-gray-900 transition-colors">Episodes</Link>
+            <Link href="/dashboard/settings" className="hover:text-gray-900 transition-colors">Settings</Link>
             <Link href="/help"               className="hover:text-gray-900 transition-colors">Help &amp; FAQ</Link>
             <Link href="/pricing"            className="hover:text-gray-900 transition-colors">Pricing</Link>
             {isOwner && (

@@ -29,6 +29,7 @@ import { ShareButton }             from "./components/ShareButton";
 import {
   ArrowLeft, CheckCircle2, Clock, Radio,
   Download, Mic2, Archive, Sparkles, DollarSign,
+  Wand2, AlertCircle, SkipForward,
 } from "lucide-react";
 import type { Asset, AssetType } from "@/db/schema";
 
@@ -291,7 +292,29 @@ export default async function EpisodeDetailPage({
                   <Sparkles className="w-5 h-5 text-indigo-400" />
                   <div>
                     <p className="text-sm font-semibold text-gray-800">Enhanced audio</p>
-                    <p className="text-xs text-gray-400">Noise-reduced · loudness normalized</p>
+                    {/* Show what actually happened to the audio — never leave users guessing */}
+                    {(() => {
+                      const status = (episode as { audioEnhancementStatus?: string | null }).audioEnhancementStatus;
+                      // Infer for legacy episodes: if cleanedAudioStorageKey is set but no status, treat as enhanced
+                      const effectiveStatus = status ?? (cleanedAudioUrl ? "enhanced" : null);
+                      if (effectiveStatus === "enhanced") {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium mt-0.5">
+                            <Wand2 className="w-3 h-3" />
+                            AI Enhanced — noise reduction applied
+                          </span>
+                        );
+                      }
+                      if (effectiveStatus === "fallback") {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium mt-0.5">
+                            <AlertCircle className="w-3 h-3" />
+                            Enhancement attempted — using best available output
+                          </span>
+                        );
+                      }
+                      return <p className="text-xs text-gray-400">Noise-reduced · loudness normalized</p>;
+                    })()}
                   </div>
                 </div>
                 <a
@@ -304,6 +327,32 @@ export default async function EpisodeDetailPage({
                 </a>
               </div>
             )}
+
+            {/* Enhancement skipped badge — shown when no cleaned audio exists but status is set */}
+            {!cleanedAudioUrl && (() => {
+              const status = (episode as { audioEnhancementStatus?: string | null }).audioEnhancementStatus;
+              if (status === "skipped") {
+                return (
+                  <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-5 py-3">
+                    <SkipForward className="w-4 h-4 text-gray-400 shrink-0" />
+                    <p className="text-xs text-gray-500">
+                      Audio enhancement skipped — file was too large for enhancement. Original audio available below.
+                    </p>
+                  </div>
+                );
+              }
+              if (status === "fallback") {
+                return (
+                  <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/40 px-5 py-3">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <p className="text-xs text-amber-700">
+                      Audio enhancement was attempted but could not be applied to this recording. Original audio below.
+                    </p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* Original audio */}
             {audioUrl && (

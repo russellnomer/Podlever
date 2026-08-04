@@ -25,6 +25,9 @@ import { getSessionOptions }               from "@/providers/auth";
 import { requireBetaAccess }               from "@/providers/owner-guard";
 import { episodeRepository, assetRepository } from "@/repositories";
 import { buildEpisodeZip }                 from "@/lib/zip-export";
+import { db }                              from "@/db";
+import { users }                           from "@/db/schema";
+import { eq }                              from "drizzle-orm";
 import { z }                               from "zod";
 import type { PodLeverSession }            from "@/providers/auth";
 
@@ -63,8 +66,19 @@ export async function GET(
 
   // ── Build ZIP ─────────────────────────────────────────────────────────────
   try {
+    // Fetch user branding prefs for PDF watermark toggle (Pro/Agency feature)
+    const [userRow] = await db
+      .select({ hidePodleverBranding: users.hidePodleverBranding, plan: users.plan })
+      .from(users)
+      .where(eq(users.id, ownerId))
+      .limit(1);
+
+    // Only Pro/Agency users can suppress the PodLever watermark
+    const isPaid              = userRow?.plan === "pro" || userRow?.plan === "agency";
+    const hidePodleverBranding = isPaid && (userRow?.hidePodleverBranding === true);
+
     const assets    = await assetRepository.listAssetsForEpisode(episodeId);
-    const zipBuffer = await buildEpisodeZip({ episode, assets });
+    const zipBuffer = await buildEpisodeZip({ episode, assets, hidePodleverBranding });
 
     // Slugify title for the filename
     const slug = episode.title

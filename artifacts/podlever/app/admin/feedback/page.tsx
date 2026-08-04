@@ -26,7 +26,7 @@ import { db } from "@/db";
 import { feedback, FEEDBACK_STATUSES } from "@/db/schema/feedback";
 import { users } from "@/db/schema/users";
 import { waitlist } from "@/db/schema/waitlist";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { ArrowLeft, MessageSquareText, ExternalLink } from "lucide-react";
 import { updateFeedbackAction } from "@/app/actions/feedback-admin.actions";
 
@@ -79,7 +79,9 @@ export default async function AdminFeedbackPage({
       email: waitlist.email,
     })
     .from(feedback)
-    .leftJoin(users, eq(users.id, feedback.userId))
+    // Cast users.id (uuid) to text to match feedback.userId (text) — avoids
+    // "operator does not exist: uuid = text" in production PostgreSQL.
+    .leftJoin(users, sql`${users.id}::text = ${feedback.userId}`)
     .leftJoin(waitlist, eq(waitlist.replitUserId, users.externalIdentityId))
     .orderBy(desc(feedback.createdAt))
     .limit(200);

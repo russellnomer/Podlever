@@ -21,6 +21,7 @@
  */
 
 import {
+  boolean,
   integer,
   pgEnum,
   pgTable,
@@ -170,6 +171,40 @@ export const users = pgTable("users", {
    * Null when not suspended.
    */
   suspendedReason: text("suspended_reason"),
+
+  /**
+   * Audience persona for AI-generated content.
+   * Stored at account level — applies to every episode processed.
+   *
+   * Values: "general" | "executive" | "creator" | "wellness" | "practitioner" | "fan" | "investor"
+   * Default: "general" (all plans).
+   * Premium personas (non-general) require Pro or Agency plan.
+   * The persona is injected into every LLM system prompt via lib/personas.ts.
+   */
+  audiencePersona: text("audience_persona").notNull().default("general"),
+
+  /**
+   * Voice style profile extracted from the user's first episode transcript.
+   * JSON string: { avgSentenceWords: number; formalityScore: number; humourMarkers: boolean }
+   * Null until first episode is processed. Set by the pipeline; injected into subsequent prompts.
+   * Sprint 3 feature — column added now, populated later.
+   */
+  voiceProfile: text("voice_profile"),
+
+  /**
+   * GCS object key for the user's uploaded brand logo.
+   * Used in co-branded PDF header alongside PodLever mark.
+   * PNG/JPG/WebP only; max 2MB; magic-byte validated before storage.
+   * Sprint 2 feature — column added now, upload route added in Sprint 2.
+   */
+  logoStorageKey: text("logo_storage_key"),
+
+  /**
+   * When true, suppresses the "Powered by PodLever" watermark from generated PDFs.
+   * Available to Pro and Agency plans only; gated in the PDF generator.
+   * Default false — watermark visible for all free/beta users.
+   */
+  hidePodleverBranding: boolean("hide_podlever_branding").notNull().default(false),
 
   /** Row creation timestamp. Set once; never updated. */
   createdAt: timestamp("created_at", { withTimezone: true })

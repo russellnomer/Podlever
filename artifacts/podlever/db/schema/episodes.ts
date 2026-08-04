@@ -138,6 +138,21 @@ export const episodes = pgTable("episodes", {
    * failures are never a mystery spinner.
    */
   processingError: text("processing_error"),
+
+  /**
+   * Result of the FFmpeg audio enhancement step.
+   * Set by the processing pipeline after the enhancement block runs.
+   *
+   * Values:
+   *   "enhanced" — FFmpeg anlmdn/afftdn ran successfully; cleaned audio stored.
+   *   "fallback"  — Enhancement was attempted but failed; original audio used.
+   *   "skipped"   — File exceeded ENHANCE_MAX_BYTES; enhancement not attempted.
+   *   null        — Episode processed before this column was added (legacy).
+   *
+   * Display rule: if null and cleanedAudioStorageKey is set, treat as "enhanced".
+   * If null and no cleanedAudioStorageKey, do not show any status badge.
+   */
+  audioEnhancementStatus: text("audio_enhancement_status"),
 });
 
 // ─── TypeScript types ─────────────────────────────────────────────────────────

@@ -1,0 +1,248 @@
+urrent state (verified in code):
+
+ZIP download: exists and works — transcript, show notes, blog post, social copy, guest media pack markdown, original + cleaned audio, _meta.json
+Guest media pack PDF: exists — PDFKit-generated, basic header/footer, no user logo, no PodLever watermark toggle
+Audio cleanup: runs in the pipeline — FFmpeg anlmdn → afftdn fallback — but silently degrades to original on failure with no user-facing indicator that enhancement occurred or failed; cleaned audio IS downloadable separately on the episode page
+Audience tailoring in prompts: not built — single generic GPT prompt for all content types
+User logo customization: not built
+Cross-promotion of other properties: not built
+ADVISORY BOARD — FULL SESSION
+Topic: Adoption, Writing Quality, Deliverable Package, Audio, Branding, Cross-Promotion Format: Phase 1 → Phase 2 → Phase 4 → Phase 5 → Phase 6 All 9 advisors present
+
+PHASE 1 — STATE OF THE BUSINESS (Each advisor, one lens)
+MARGARET CHEN — Bootstrapped SaaS Operator
+Readiness: 5/10
+
+The product works technically. The problem is that what works technically and what users experience are two different things. Audio cleanup runs — but if I process an episode and nothing on screen tells me "your audio was enhanced from 68dB SNR to 84dB SNR," I don't know it happened. I paid for a benefit I can't see. That's a marketing failure wrapped in an engineering success.
+
+The ZIP download works. But "works" means it compiles and serves a file. Does it open cleanly? Does the naming convention make sense to a podcaster? Does it arrive in 3 seconds or 30? Is there a progress indicator? Working code is not the same as a working product.
+
+The watermark removal for paid users is the right instinct — it's how Canva, Descript, and every creative SaaS monetizes. But watermark removal only has value if the watermark creates visible attribution. Right now there's no watermark to remove. Build the watermark first, make it visible, then sell the removal.
+
+Biggest risk: Users process one episode, download the ZIP, open a .md file in TextEdit, have no idea what to do with it, and churn. The delivery format is developer-brained. Podcasters want a PDF they can forward to their team and a Google Doc they can edit, not a folder of markdown files.
+
+DAVID OKONKWO — Creative Industry Insider
+Readiness: 4/10
+
+Twenty-five years of watching creative tools fail in this exact way: technically impressive, experientially hollow.
+
+The writing quality question is the most important thing on this agenda and it's buried under everything else. Let me put it at the top where it belongs. Podcasters don't just want content repurposed — they want their voice repurposed. A transcript processed through a generic GPT prompt sounds like every other AI-generated newsletter. The podcaster's audience will recognize it immediately as machine-written and stop reading.
+
+"Red team 11/10" writing requires three things that aren't currently in the system:
+
+Voice calibration — understanding how this specific host talks (sentence length, vocabulary, humor level, formality)
+Audience targeting — knowing whether this show's listeners are C-suite executives, indie hackers, wellness seekers, or true crime fans, and writing for that person specifically
+Format intelligence — a LinkedIn post for B2B SaaS buyers is structured differently than one for wellness creators; same platform, completely different register
+The cross-promotion of creatorvidpro.com, coveragecouncil.com, and russellnomermusic.com: I like the instinct but the execution matters enormously. A podcaster who just processed their episode doesn't want to see a banner ad for a music service. They want a contextual, value-first touchpoint at the right moment. Done wrong, cross-promotion reads as desperation. Done right, it reads as ecosystem.
+
+RACHEL VASQUEZ — Unit Economics Hawk
+Readiness: 5/10
+
+Three items on this agenda have direct revenue implications I need to flag:
+
+Watermark removal as a paid feature: This is the right model. Canva makes tens of millions from this exact mechanism. But the math only works if the watermark drives meaningful organic acquisition first. If PodLever's watermarked PDFs are shared 0 times per month, removing the watermark generates zero incremental revenue. Instrument shares first; price removal second.
+
+Audience tailoring as a premium feature: Don't give this away on the free tier. Audience persona selection — "write for a B2B executive," "write for a fitness enthusiast," "write for a true crime fan" — is exactly the kind of feature that converts free users to paid. Gate it. The free trial gets one audience (generic), paid tiers get the full persona library.
+
+Cross-promotion economics: russellnomermusic.com custom songs, creatorvidpro.com, coveragecouncil.com — the question isn't "does the niche make sense?" (it does) but "what's the referral economics?" If you send a paying Pro user to another property and they leave and don't come back, you've subsidized your own churn. Cross-promote only at moments of maximum satisfaction (right after episode completes successfully) and track the exit rate. If it exceeds 5%, pull the promotion.
+
+JAMES OKAFOR — Community-Led Growth Strategist
+Readiness: 5/10
+
+Adoption gap analysis first, then I'll get to cross-promotion.
+
+The three highest-leverage adoption moves not yet executed:
+
+1. Shareability of the output. Every PDF, every social post generated, every guest media pack should carry a PodLever signature. Not a watermark — a signature. "Powered by PodLever" in the footer of a guest PDF that gets emailed to a high-profile guest is free acquisition. That guest Googles it. Their podcast manager Googles it. This is the product marketing itself.
+
+2. The episode URL as an acquisition surface. The public share link exists but is it shareable? Does it load in under 2 seconds? Does it have proper Open Graph tags so it renders beautifully when shared on LinkedIn? A beautiful episode page that a user shares publicly is more effective than any ad.
+
+3. Template-to-signup funnel. When a visitor lands on a shared episode page and clicks "Create your own," they hit the signup wall. What's the conversion rate on that? I'd bet it's under 5% because there's no preview of what they'd get. Show them a sample episode output before they create an account.
+
+Cross-promotion: I'm generally bullish on ecosystem cross-promotion but the placement must be contextual. The right moment to mention creatorvidpro.com is inside the social media copy panel ("want to turn this into a video? Check out CreatorVidPro"). The right moment for coveragecouncil.com is in the guest media pack ("ensure your guest's coverage is accurate with CoverageCouncil"). russellnomermusic.com belongs in an outro email after the episode is complete — "Your podcast content is ready. Want a custom theme song?" These are planted seeds, not banner ads.
+
+DR. ANANYA SHARMA — AI Product Architect
+Readiness: 4/10 on writing quality specifically
+
+The "11/10 writing" objective is achievable but requires architectural changes to the prompt system, not just better prompts. Here's the honest assessment:
+
+Current state: Single-pass GPT call with a generic system prompt. Output quality is capped by the information the prompt has access to: the transcript, the episode metadata, and a generic instruction. No knowledge of the host's voice, the show's audience, the platform norms, or the communication style that resonates with that specific listenership.
+
+What "11/10" requires:
+
+Audience persona system. A defined library of audience archetypes — each with vocabulary profile, content preferences, attention span, platform behavior, and resonance triggers. At minimum:
+
+The Executive (C-suite, time-scarce, ROI-driven, LinkedIn-native): lead with the takeaway, bullet-point everything, no fluff, strong data citations
+The Creator (indie podcaster/YouTuber, peer-to-peer tone, Twitter/X native): casual authority, behind-the-scenes framing, actionable tactics, humor is welcome
+The Wellness Seeker (lifestyle/health audience, Instagram native): aspirational framing, community language, sensory vocabulary, transformation arc
+The Practitioner (B2B professional, newsletter reader): case study structure, mechanism-first, jargon is fine if precise, long-form tolerance high
+The Fan (entertainment/true crime/sports): narrative hook, cliffhangers, character-driven, emotional peaks, Twitter/TikTok native
+The Investor (VC/finance audience, Bloomberg/Twitter): signal density, no fluff, counterfactual framing, original insight valued above summary
+Voice calibration. On first episode, extract stylistic fingerprints from the transcript: average sentence length, vocabulary complexity, humor markers, rhetorical devices. Feed this back as style guidance on every subsequent episode.
+
+Platform-specific post formats. LinkedIn B2B carousel copy ≠ LinkedIn personal story post ≠ Twitter/X thread ≠ Instagram caption. Each has different hook structures, CTA patterns, and optimal lengths. These should be hardcoded as format templates filled by the LLM, not generated free-form.
+
+Quality gate. Before returning content, run a secondary LLM pass that scores the output against the target audience profile and rewrites any section scoring below threshold. This is the "red team" mechanism built into the pipeline.
+
+Defensibility note: This is the hardest thing for a competitor to copy quickly. Data-trained voice models are the moat. Every episode that runs makes the voice calibration better.
+
+KAREN WHITFIELD — Customer Advocate
+Readiness: 4/10
+
+I've interviewed 2,000+ users of creative tools. Let me tell you exactly what they say about AI-generated content: "It sounds like a press release written by someone who's never listened to my show."
+
+The job the user is hiring PodLever to do is not "produce content." It is: "Help me maintain a consistent content presence without spending 6 hours per episode doing it myself." That job fails if the output needs heavy editing. If a user spends more time editing PodLever output than they saved, the product has failed the job regardless of whether the download worked.
+
+The audience tailoring feature addresses this directly. But I want to be clear about the UX requirement: the audience selector must be set once, not per episode. Podcast shows have stable audiences. A health and wellness show is always a health and wellness show. The setting lives at the show/account level, not the episode level. Making users select it every time is friction that will kill adoption.
+
+On the downloadable package: the format matters more than the feature. Podcasters use Google Docs, Notion, and email. They do not use .md files. The download should produce:
+
+A branded PDF summary (all content in one document, clean layout, shareable)
+Plain .txt files for the copy-paste workflows
+The audio files
+The current ZIP is option 3 and a version of option 2 but option 1 — the thing people actually want to forward to their team or sponsor — doesn't exist.
+
+THOMAS HARRINGTON — Venture Lens
+Readiness: 5/10
+
+Three strategic questions about the cross-promotion plan:
+
+1. What is PodLever's core identity? If it's "the AI content suite for podcasters," then creatorvidpro.com and coveragecouncil.com are adjacent but distinct products. Cross-promotion works when the customer is the same person buying adjacent things. Are PodLever's users the same people who need CreatorVidPro and CoverageCouncil? If yes, ecosystem play. If no, you're fragmenting your message.
+
+2. Custom songs (russellnomermusic.com) is the riskiest cross-promo. Custom music is a high-consideration, personal purchase. A podcaster who just processed an episode is in content-distribution mode, not music-buying mode. Unless there's a very specific trigger moment ("your episode is ready — does your podcast have a professional intro jingle?"), this is noise at the wrong time.
+
+3. The market timing argument for doing it now: You have zero ad budget and three owned properties. Cross-promoting between them costs nothing except trust. Done right, it's a force multiplier. Done wrong, it's the thing that makes PodLever feel like a side project. The execution bar for cross-promotion to feel premium is high — it needs to look like a native recommendation, not a banner ad, and require no click friction.
+
+On adoption broadly: the highest-leverage untapped adoption driver is not any of the features discussed. It's social proof at the moment of signup. A new user landing on the homepage has no evidence that real podcasts use this and get real results. One embedded before/after (raw transcript → polished blog post) from a real episode — with the user's permission — is worth more than any feature. This should be built before any of the cross-promotion integrations.
+
+COLONEL (RET.) DIANE MARSHALL — Operations Strategist
+Readiness: 3/10 on delivery integrity
+
+I'm going to say what no one else will: you are advertising features that either don't exist in user-visible form or are silently failing. This is an operational integrity problem.
+
+Audio cleanup: The FFmpeg enhancement runs but silently falls back to the original when it fails. The user is shown no indicator of whether their audio was enhanced or not. Your marketing page says "AI-powered audio enhancement." If enhancement failed on 40% of episodes (which is plausible with adaptive FFmpeg), you've been misrepresenting the product to 40% of users. Fix: always show the user what happened to their audio. "Enhanced (noise reduction applied)" or "Original audio (enhancement not applicable for this recording)" — both are honest; silence is not.
+
+Downloadable package: The ZIP exists in code. But has anyone actually downloaded it, opened it, and walked through the experience as a non-technical podcaster? The .md files require a markdown viewer. The JSON meta file is meaningless to most users. The cleaned audio may be missing if enhancement silently failed. The ZIP needs user-acceptance testing, not code review.
+
+Advertising vs. delivery gap: Before shipping any new features, audit every item on the marketing page and the pricing table against what actually ships. Every gap is a trust debt that compounds. Users who feel misled don't complain — they churn and warn others.
+
+Branded PDF with logo: Do not ship this feature until it is tested end-to-end with an actual user logo. Logo placement, resolution handling, white-background vs. transparent PNG handling, and PDF rendering across different viewers are all failure modes that need validation before launch. The worst outcome is a broken-looking PDF with a distorted logo on a paid user's document.
+
+MARCUS REEVES — Seasoned CISO
+Readiness: 5/10
+
+Two security considerations for this agenda:
+
+Logo upload: When you accept user-uploaded logos, you accept user-uploaded files. PNG/JPG uploads require validation (magic-byte verification, not just extension checking), file size limits, and server-side rendering (never execute uploaded content). If you're generating PDFs with user logos, the logo must be sanitized before insertion into the PDF generation pipeline. SVG uploads in particular are an XSS vector — accept only PNG/JPG/WebP.
+
+Cross-promotion links: When linking to creatorvidpro.com, coveragecouncil.com, and russellnomermusic.com from within PodLever's authenticated session, ensure those links are rel="noopener noreferrer" and that you're not passing session tokens or user data across the domain boundary. Even within an owned portfolio, treat cross-domain links as external.
+
+PHASE 2 — GAP ANALYSIS
+Gap	Category	Severity
+Audio enhancement has no user-visible status indicator	Product	Critical — advertised feature that may be invisible
+ZIP contains .md files, not a branded PDF of all content	Product	Critical — delivery format wrong for target users
+Writing quality: no audience persona selection	Product	Critical — core differentiator not built
+User logo upload + co-branding in PDF	Product	Important
+PodLever watermark + paid removal toggle	Revenue	Important
+Voice/style calibration from transcript	Product	Important
+Public share page OG tags + SEO	Market	Important
+Social proof on homepage (real episode before/after)	Market	Important
+Cross-promotion (3 properties)	Market	Nice-to-have
+Quality gate LLM second-pass	Product	Nice-to-have
+PHASE 4 — PRIORITY STACK
+Score = Impact (1–5) × Feasibility (1–5) ÷ Risk (1–5)
+
+#	Action	Impact	Feasibility	Risk	Score	When
+1	Audience persona system — 6 archetypes, account-level setting, injected into every prompt	5	4	1	20	Sprint 1
+2	Audio enhancement status indicator — show "Enhanced" or "Original" badge on episode page and in ZIP _meta.json	5	5	1	25	Sprint 1
+3	Branded PDF summary — all 5 content panels in one shareable PDF (replaces .md in ZIP), PodLever header/footer	5	3	2	7.5	Sprint 1
+4	PodLever watermark in PDF — visible podlever.com mark on all output; toggle off for Pro/Agency	4	4	1	16	Sprint 1
+5	User logo upload — account settings, PNG/JPG/WebP only, inserted into PDF header alongside PodLever mark	4	3	2	6	Sprint 2
+6	Social proof on homepage — real before/after episode example, with user permission	5	3	1	15	Sprint 1
+7	Share page OG tags — title, description, image from episode metadata	4	5	1	20	Sprint 1
+8	Voice/style calibration — extract fingerprint from transcript, feed into subsequent episode prompts	4	3	2	6	Sprint 2
+9	Contextual cross-promotion — creatorvidpro in social panel, coveragecouncil in guest pack, russellnomermusic in completion email	3	4	2	6	Sprint 2
+10	Quality gate second-pass — LLM self-critique + rewrite on audience alignment	3	3	3	3	Sprint 3
+PHASE 5 — DISSENT REGISTER
+Marshall vs. Ananya on quality gate: Marshall says ship the audio status indicator before any new AI features. Ananya says the quality gate is the highest-leverage improvement in the pipeline and should be Sprint 1. Resolution: Marshall wins. Delivery integrity before sophistication. Audio status indicator is a one-day fix that closes an advertised gap. Quality gate is a week of work. Fix what's broken first.
+
+Karen vs. Rachel on audience targeting gating: Karen wants the persona selector to be free (reduces editing burden for all users, drives word-of-mouth). Rachel wants it gated at Pro (conversion lever). Resolution: Rachel wins at the feature level, Karen wins at the tier level. Free users get one persona (Generic). Pro users get all 6 archetypes. This is the right Freemium split — the free user sees the selector, gets one option, and understands exactly what they're missing.
+
+James vs. Thomas on cross-promotion timing: James says cross-promote now (costs nothing, owned properties, ecosystem play). Thomas says wait until you have social proof and the core product is tight. Resolution: Contextual cross-promotion at high-satisfaction moments only. Completion email is zero friction. In-panel callouts are fine if they're genuinely useful ("create a video from this script"). Homepage or pricing page cross-promotion is not ready — it dilutes the PodLever message before it's established.
+
+Okonkwo on russellnomermusic.com: "A custom song for your podcast is a real need. But the audience for it is a podcaster who has been running their show for at least 6 months and wants to professionalize. That's a retention play, not an acquisition play. Surface it at month 3, not episode 1."
+
+PHASE 6 — 90-DAY ACTION PLAN
+Sprint 1 (Weeks 1–2): Fix the gaps that affect current users
+1. Audio enhancement status badge
+
+Add enhancementStatus field to episode: enhanced | fallback | skipped
+Set it in the process route based on whether FFmpeg ran successfully or fell back
+Display a badge on the episode page ("✓ Audio Enhanced" or "Original Audio")
+Include it in ZIP _meta.json and in the completion email
+Success: every user knows what happened to their audio within this sprint
+2. Audience persona system (account-level)
+
+6 archetypes: Executive / Creator / Wellness / Practitioner / Fan / Investor
+Stored on users.audiencePersona (single migration, text column)
+Selected at onboarding (step added after first login) and in account settings
+Injected into every LLM prompt as a structured persona block with vocabulary, format, length, and tone guidance
+Free tier: Generic only. Pro/Agency: all 6
+Success: episode output noticeably different between Executive and Creator personas on the same transcript
+3. Share page OG tags
+
+Add <meta og:title>, og:description (first 160 chars of show notes), og:image (generated episode card or placeholder)
+Success: LinkedIn/Twitter preview renders the episode title and description when link is shared
+4. Social proof on homepage
+
+One real before/after with explicit user permission: raw paragraph of transcript → polished blog post paragraph
+Static, no PII, just the content transformation
+Success: homepage conversion rate measurably improves within 30 days
+Sprint 2 (Weeks 3–5): Branded deliverable package
+5. Branded PDF summary (all-content)
+
+Replace or supplement the .md files in ZIP with a single PDF: cover page, transcript excerpt, show notes, blog post, social copy, guest pack summary
+PodLever header (podlever.com + logo) on every page, page numbers, episode title/date
+Watermark toggle: Pro/Agency can disable the PodLever footer mark (account setting)
+Success: PDF opens cleanly in Preview/Acrobat, looks professional enough to forward to a sponsor
+6. User logo upload
+
+Account settings: upload PNG/JPG/WebP, max 2MB, magic-byte validated server-side
+Stored in object storage, referenced by account
+Rendered in PDF header alongside PodLever logo (co-branded by default; Pro/Agency can go logo-only by removing PodLever mark)
+Success: PDF shows user's logo + PodLever logo on same page without distortion
+7. Voice/style calibration (V1)
+
+After transcript is processed, extract: avg sentence length, formality score (via simple heuristic), humor markers (laughter cues in transcript)
+Store as JSON on episode/user profile
+Feed back into subsequent episode prompts as "this host writes like: [profile]"
+Success: users report the second episode sounds more like them than the first
+Sprint 3 (Weeks 6–10): Cross-promotion and quality gate
+8. Contextual cross-promotion (3 touchpoints)
+
+Social Copy panel: "Want to turn this into a video? → CreatorVidPro" (text link, not banner)
+Guest Media Pack: "Verify coverage accuracy → CoverageCouncil" (single line in PDF footer)
+Episode completion email: "Your episode is ready. P.S. Does your show have a custom intro? → RussellNomerMusic" (P.S. line only, not headline)
+Track exit rate from each touchpoint; pull if >5% session abandonment
+9. Quality gate second-pass
+
+After primary content generation, run a 200-token LLM call: "Score this [content type] for [audience persona] on signal density (1–10) and rewrite any section scoring below 7"
+Cost: ~$0.02/episode additional COGS — acceptable at current volume
+Success: internal red-team scoring improves from ~6/10 to ~8.5/10 on random sample
+BOARD CONSENSUS — RANKED BY URGENCY
+Priority	What	Why now
+🔴 Fix immediately	Audio enhancement status indicator	You're advertising it; users can't see it
+🔴 Fix immediately	Audience persona system	Core differentiator; every episode processed without it is a missed quality opportunity
+🟠 Sprint 1	Share page OG tags	Zero cost, immediate distribution leverage
+🟠 Sprint 1	Social proof on homepage	Highest-leverage acquisition fix available
+🟡 Sprint 2	Branded all-content PDF with watermark	The actual deliverable users want
+🟡 Sprint 2	User logo upload + co-branding	Unlocks watermark-removal revenue
+🟢 Sprint 3	Voice calibration	Retention driver after persona system is live
+🟢 Sprint 3	Contextual cross-promotion	Only after core product is tight
+⚪ Backlog	Quality gate second-pass	Ship persona system first; measure improvement
+
+Worked for 3 minutes
+
+Checkpoint made
+42 minutes ago
+get this done in this order! BOARD CONSENSUS — RANKED BY URGENCY Priority What Why now 🔴 Fix immediately Audio enhancement status indicator You're advertising it; users can't see it 🔴 Fix immediately Audience persona system Core differentiator; every episode processed without it is a missed quality opportunity 🟠 Sprint 1 Share page OG tags Zero cost, immediate distribution leverage 🟠 Sprint 1 Social proof on homepage Highest-leverage acquisition fix available 🟡 Sprint 2 Branded all-content PDF with watermark The actual deliverable users want 🟡 Sprint 2 User logo upload + co-branding Unlocks watermark-removal revenue 🟢 Sprint 3 Voice calibration Retention driver after persona system is live 🟢 Sprint 3 Contextual cross-promotion Only after core product is tight ⚪ Backlog Quality gate second-pass Ship persona system first; measure improvement

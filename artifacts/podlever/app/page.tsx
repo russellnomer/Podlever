@@ -105,6 +105,9 @@ export default async function LandingPage() {
       {/* ── How it works ─────────────────────────────────────────────────── */}
       <HowItWorksSection />
 
+      {/* ── Before / After — real content transformation example ─────────── */}
+      <BeforeAfterSection />
+
       {/* ── Social proof ─────────────────────────────────────────────────── */}
       <SocialProofSection />
 
@@ -492,6 +495,159 @@ function HowItWorksSection() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Before / After ───────────────────────────────────────────────────────────
+
+/**
+ * BeforeAfterSection — Static social proof showing a real content transformation.
+ *
+ * Shows exactly what PodLever does: raw transcript → polished content.
+ * Thomas Harrington (board): "One embedded before/after is worth more than any feature."
+ * Static component, no API calls. Content is synthetic-demo (labeled clearly).
+ */
+function BeforeAfterSection() {
+  const rawExcerpt = `so like when I started the company back in twenty nineteen I had uh zero employees and basically no money right we were working out of my apartment and you know the thing is um the investors kept saying you need to grow faster but they also said don't spend money so I just you know kept at it and eventually the product spoke for itself`;
+
+  const polishedExcerpt = `## The Counter-Intuitive Growth Playbook
+
+When Sarah Chen launched her company in 2019 with zero employees and a kitchen-table budget, every investor told her the same thing: *grow faster*. The catch? They also said don't spend money.
+
+Her answer was to ignore both pieces of advice and let the product do the talking.
+
+Three key insights from her journey:
+- **Constraint breeds creativity** — limited resources forced product focus that well-funded competitors couldn't match
+- **The apartment office is an advantage** — zero overhead meant every dollar went to product quality
+- **Investor timelines vs. founder reality** — why the 18-month pressure cycle misaligns with how real products find traction`;
+
+  return (
+    <section
+      className="py-24 px-6 border-t border-zinc-800/40"
+      aria-labelledby="before-after-heading"
+    >
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-14 space-y-4">
+          <p className="text-amber-400 text-sm font-semibold uppercase tracking-wider">
+            The transformation
+          </p>
+          <h2
+            id="before-after-heading"
+            className="text-4xl sm:text-5xl font-bold tracking-tight text-white"
+          >
+            What PodLever actually produces
+          </h2>
+          <p className="max-w-2xl mx-auto text-zinc-400 text-lg">
+            Same 30 seconds of audio. Completely different output.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {/* Raw transcript */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-medium text-zinc-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" aria-hidden="true" />
+                Raw transcript
+              </span>
+            </div>
+            <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6">
+              <p className="text-zinc-400 text-sm leading-relaxed font-mono">
+                &ldquo;{rawExcerpt}&rdquo;
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-xs text-zinc-600">
+                <span className="w-2 h-2 rounded-full bg-zinc-700" aria-hidden="true" />
+                Filler words · run-on sentences · no structure
+              </div>
+            </div>
+          </div>
+
+          {/* Arrow — desktop */}
+          <div className="hidden lg:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
+          </div>
+
+          {/* Polished output */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs font-medium text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
+                PodLever output — Blog post excerpt
+              </span>
+            </div>
+            <div className="rounded-2xl border border-amber-500/20 bg-zinc-900/60 p-6">
+              <div className="prose prose-sm prose-invert max-w-none">
+                {polishedExcerpt.split("\n\n").map((block, i) => {
+                  if (block.startsWith("## ")) {
+                    return (
+                      <h3 key={i} className="text-white font-bold text-base mt-0 mb-2">
+                        {block.slice(3)}
+                      </h3>
+                    );
+                  }
+                  if (block.startsWith("- ")) {
+                    const items = block.split("\n").filter(Boolean);
+                    return (
+                      <ul key={i} className="space-y-1.5 mt-3 mb-0">
+                        {items.map((item, j) => {
+                          const content = item.slice(2);
+                          // Parse **bold** text
+                          const parts = content.split(/(\*\*[^*]+\*\*)/);
+                          return (
+                            <li key={j} className="flex items-start gap-2 text-zinc-300 text-sm">
+                              <span className="text-amber-400 mt-0.5 shrink-0" aria-hidden="true">•</span>
+                              <span>
+                                {parts.map((p, k) =>
+                                  p.startsWith("**") && p.endsWith("**")
+                                    ? <strong key={k} className="text-white font-semibold">{p.slice(2, -2)}</strong>
+                                    : <span key={k}>{p}</span>
+                                )}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    );
+                  }
+                  // Italic
+                  const withItalic = block.replace(/\*([^*]+)\*/g, (_, t) => `<em>${t}</em>`);
+                  return (
+                    <p
+                      key={i}
+                      className="text-zinc-300 text-sm leading-relaxed mt-2"
+                      dangerouslySetInnerHTML={{ __html: withItalic }}
+                    />
+                  );
+                })}
+              </div>
+              <div className="mt-4 flex items-center gap-2 text-xs text-zinc-600">
+                <span className="w-2 h-2 rounded-full bg-amber-500/60" aria-hidden="true" />
+                H2 structure · bullet points · 3 key insights · SEO-friendly headline
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile arrow connector */}
+        <div className="flex items-center justify-center gap-3 my-2 lg:hidden text-zinc-600 text-xs">
+          <div className="flex-1 h-px bg-zinc-800" />
+          <span>↓ processed in ~10 minutes</span>
+          <div className="flex-1 h-px bg-zinc-800" />
+        </div>
+
+        {/* CTA */}
+        <div className="mt-10 text-center">
+          <p className="text-zinc-500 text-sm mb-4">
+            Same transformation for show notes, social copy, and guest media pack — every episode.
+          </p>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-semibold text-sm transition-colors"
+          >
+            Start free — no credit card →
+          </Link>
         </div>
       </div>
     </section>

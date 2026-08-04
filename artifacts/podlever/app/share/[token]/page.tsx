@@ -39,25 +39,55 @@ export async function generateMetadata({
   const { token } = await params;
 
   const [episode] = await db
-    .select({ title: episodes.title })
+    .select({ title: episodes.title, id: episodes.id })
     .from(episodes)
     .where(eq(episodes.shareToken, token as unknown as string))
     .limit(1);
 
   if (!episode) return { title: "Episode not found · PodLever" };
 
+  // Pull show notes for a real og:description — first 160 chars gives social
+  // previews meaningful content instead of the generic boilerplate.
+  let description = "AI-generated podcast content suite — show notes, blog post, social copy, and more.";
+  try {
+    const { assetRepository } = await import("@/repositories");
+    const assets    = await assetRepository.listAssetsForEpisode(episode.id);
+    const showNotes = assets.find((a) => a.assetType === "show_notes")?.content;
+    if (showNotes) {
+      // Strip markdown headings/bullets from the first 200 chars, then trim to 160
+      const plainText = showNotes
+        .replace(/^#+\s+/gm, "")
+        .replace(/^[-*]\s+/gm, "")
+        .replace(/\*\*/g, "")
+        .trim();
+      const snippet = plainText.slice(0, 160).replace(/\s+$/, "");
+      if (snippet.length > 40) description = snippet + (plainText.length > 160 ? "…" : "");
+    }
+  } catch { /* non-fatal — fall back to generic description */ }
+
+  const canonicalUrl = `https://podlever.com/share/${token}`;
+
   return {
     title:       `${episode.title} · PodLever`,
-    description: `AI-generated show notes and transcript — powered by PodLever`,
+    description,
     openGraph: {
+      type:        "article",
+      url:         canonicalUrl,
       title:       `${episode.title} · PodLever`,
-      description: "AI-generated podcast content suite — show notes, blog post, social copy, and more.",
+      description,
       siteName:    "PodLever",
+      images: [{
+        url:   "https://podlever.com/og-default.png",
+        width:  1200,
+        height:  630,
+        alt:   `${episode.title} — AI-generated podcast content by PodLever`,
+      }],
     },
     twitter: {
-      card:        "summary",
+      card:        "summary_large_image",
       title:       `${episode.title} · PodLever`,
-      description: "AI-generated podcast content suite",
+      description,
+      images:      ["https://podlever.com/og-default.png"],
     },
   };
 }

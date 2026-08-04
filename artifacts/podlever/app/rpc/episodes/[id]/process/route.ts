@@ -51,11 +51,12 @@ import {
 import { executeTransition }          from "@/server/fsm";
 import { trackServerEvent }           from "@/lib/analytics";
 import { db }                         from "@/db";
-import { episodes }                   from "@/db/schema";
+import { episodes, users }            from "@/db/schema";
 import { eq }                         from "drizzle-orm";
 import { randomUUID }                 from "crypto";
 import { isCronAuthorized }           from "@/lib/cron-auth";
 import { toFile }                     from "openai";
+import { buildPersonaBlock, resolvePersona } from "@/lib/personas";
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,13 @@ function isAuthorized(req: NextRequest): boolean {
 
 // ─── Asset generation prompts ─────────────────────────────────────────────────
 
-const SYSTEM_PROMPTS: Record<string, string> = {
+/**
+ * BASE_PROMPTS — content-type instructions without audience context.
+ * Persona block is prepended at runtime via buildSystemPrompts().
+ * This separation means the persona system is additive — base prompts
+ * work correctly on their own (fallback if persona lookup fails).
+ */
+const BASE_PROMPTS: Record<string, string> = {
   show_notes: `You are a podcast producer writing structured show notes.
 Given a podcast transcript, produce clean, reader-friendly show notes in markdown:
 - An engaging 2-3 sentence episode summary
@@ -76,26 +83,26 @@ Given a podcast transcript, produce clean, reader-friendly show notes in markdow
 Return only the markdown — no preamble, no meta-commentary.`,
 
   blog_post: `You are a content strategist converting a podcast episode into a long-form blog post.
-Given a transcript, write a compelling 600-900 word blog post:
+Given a transcript, write a compelling blog post following the AUDIENCE & TONE rules above:
 - An SEO-friendly headline (H1)
 - An engaging introduction that hooks the reader
 - 3-4 well-developed sections (H2 subheadings)
 - A strong closing paragraph with a call to action
-Write in a professional but conversational tone. Return only the blog post markdown.`,
+Respect the length cap specified in the AUDIENCE CONTEXT. Return only the blog post markdown.`,
 
   social_post: `You are a social media manager writing promotional copy for a podcast episode.
-Given a transcript, produce THREE social media posts in this exact format:
+Given a transcript, produce THREE social media posts using the platform-specific format rules above:
 
-**LinkedIn (professional, 150-200 words):**
-[post]
+**LinkedIn:**
+[post — follow LinkedIn format rules from AUDIENCE CONTEXT]
 
-**Twitter/X (punchy, under 280 chars):**
-[post]
+**Twitter/X:**
+[post — follow Twitter/X format rules from AUDIENCE CONTEXT]
 
-**Instagram caption (engaging, 100-150 words + 5 relevant hashtags):**
-[post]
+**Instagram caption:**
+[post — follow Instagram format rules from AUDIENCE CONTEXT]
 
-Return only the three posts in that format — no other text.`,
+Return only the three posts in that exact format — no other text.`,
 
   guest_media_pack: `You are a podcast producer creating a guest media pack.
 Given a transcript, produce a structured guest media pack in markdown:
@@ -107,6 +114,24 @@ Given a transcript, produce a structured guest media pack in markdown:
 - **Notable quotes** (2-3 direct quotes with attribution)
 Return only the markdown — no preamble.`,
 };
+
+/**
+ * buildSystemPrompts — Construct audience-aware system prompts for all asset types.
+ *
+ * Prepends the persona block (audience context + tone/format rules) to every
+ * base prompt. The persona block is the first thing the model reads, so it
+ * sets the register before any content-type instructions.
+ *
+ * @param personaBlock  Output of buildPersonaBlock(persona) from lib/personas.ts
+ */
+function buildSystemPrompts(personaBlock: string): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(BASE_PROMPTS).map(([key, basePrompt]) => [
+      key,
+      `${personaBlock}\n\n---\n\nCONTENT TYPE INSTRUCTIONS:\n${basePrompt}`,
+    ]),
+  );
+}
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
@@ -133,6 +158,25 @@ export async function POST(
       return NextResponse.json({ error: "No audio uploaded for this episode" }, { status: 422 });
     }
     const { ownerId, audioStorageKey, fsmVersion } = episode;
+
+    // Fetch user's audience persona for content personalization.
+    // Runs in parallel with nothing — do it here before we start the pipeline.
+    const [userRow] = await db
+      .select({ audiencePersona: users.audiencePersona, plan: users.plan })
+      .from(users)
+      .where(eq(users.id, ownerId))
+      .limit(1);
+    const persona      = resolvePersona(userRow?.audiencePersona ?? "general", userRow?.plan ?? "free");
+    const personaBlock = buildPersonaBlock(persona);
+    // Build audience-aware system prompts — injected into every text generation call.
+    const SYSTEM_PROMPTS = buildSystemPrompts(personaBlock);
+
+    console.log(JSON.stringify({
+      event:    "episode.process.persona",
+      episodeId,
+      persona,
+      plan:     userRow?.plan ?? "free",
+    }));
 
     // ── 2. Download original audio ──────────────────────────────────────────
     await episodeRepository.setProcessingError(episodeId, null);
@@ -166,6 +210,11 @@ export async function POST(
     const ENHANCE_MAX_BYTES = 300 * 1024 * 1024;
     const skipEnhancement   = originalBuffer.byteLength > ENHANCE_MAX_BYTES;
     if (!skipEnhancement) await episodeRepository.setProcessingStage(episodeId, "enhancing");
+
+    // Track enhancement outcome — persisted after the try/catch block.
+    // Values: "enhanced" | "fallback" | "skipped"
+    // Displayed as a badge on the episode page so users can see what happened.
+    let audioEnhancementStatus: "enhanced" | "fallback" | "skipped" = "skipped";
 
     try {
       if (skipEnhancement) {
@@ -213,6 +262,9 @@ export async function POST(
         costUsd:      enhanceCost,
       }).catch((err) => console.error(JSON.stringify({ event: "cogs.record.failed", step: "audio_cleanup", error: String(err) })));
 
+      // Enhancement succeeded
+      audioEnhancementStatus = "enhanced";
+
     } catch (err) {
       if (!(err instanceof SkipEnhancement)) {
         // All providers failed (extremely rare — FFmpeg should always succeed).
@@ -222,8 +274,29 @@ export async function POST(
           episodeId,
           error:     err instanceof Error ? err.message : String(err),
         }));
+        // Enhancement was attempted but failed
+        audioEnhancementStatus = "fallback";
       }
+      // SkipEnhancement → status stays "skipped"
     }
+
+    // Persist enhancement status so the episode page can show the badge.
+    // Non-fatal if this write fails — pipeline continues without it.
+    await db
+      .update(episodes)
+      .set({ audioEnhancementStatus })
+      .where(eq(episodes.id, episodeId))
+      .catch((err) => console.warn(JSON.stringify({
+        event: "episode.enhancement_status.save_failed",
+        episodeId,
+        error: String(err),
+      })));
+
+    console.log(JSON.stringify({
+      event:                  "audio.enhancement.status",
+      episodeId,
+      audioEnhancementStatus,
+    }));
 
     await episodeRepository.setProcessingStage(episodeId, "transcribing");
     // ── 5. Compress + transcribe ────────────────────────────────────────────

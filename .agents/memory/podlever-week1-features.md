@@ -1,98 +1,53 @@
 ---
-name: PodLever Week-1 Feature Build
-description: Architecture decisions for the 8-feature gap-closure build (audio cleanup, revision, ZIP, guest pack PDF, job queue, Founding Member, shareable links, COGS)
+name: PodLever Sprint 1 + Board Items
+description: What was built in the Sprint 1 board execution session (2026-08-04) and what remains.
 ---
 
-# Week-1 Feature Architecture
+## What was built (2026-08-04)
 
-## Waitlist Bug Fix
-- Root cause: Drizzle `onConflictDoNothing({ target })` was the suspect; switched to bare `onConflictDoNothing()` (no target arg) — generates simpler ON CONFLICT DO NOTHING SQL.
-- Added raw-SQL fallback path in the catch block to isolate Drizzle vs DB issues.
-- Now logs full error chain: `err.message + err.cause + err.stack` (previously only `err.message`).
+**Critical fixes applied:**
+- CSP `unsafe-eval` fix for dev + Stripe domains in `next.config.ts`
+- Admin feedback UUID=text join fix (`sql\`${users.id}::text = ${feedback.userId}\``)
 
-## Job Queue (replaces after() as sole executor)
-- Table: `job_queue` (migration 0008)
-- Worker: `POST /rpc/queue/worker` (CRON_SECRET auth)
-- Stale recovery: `GET /rpc/queue/worker` — resets jobs stuck in "running" > 10 min
-- `after()` retained as a trigger-only mechanism (fast POST to worker), NOT as the executor
-- Job enqueued BEFORE `after()` fires — survives worker trigger failures
-- Exponential backoff: 30s → 5min → 30min between retries
+**Migration 0013** adds to DB:
+- `episodes.audio_enhancement_status` (text: 'enhanced'|'fallback'|'skipped')
+- `users.audience_persona` (text, default 'general')
+- `users.voice_profile` (text, nullable JSON - Sprint 3)
+- `users.logo_storage_key` (text, nullable - Sprint 2)
+- `users.hide_podlever_branding` (boolean, default false)
 
-## Audio Enhancement (Provider Abstraction — lib/audio/)
+**Sprint 1 🔴 - Completed:**
+- `lib/personas.ts` — 7 personas (general + 6 premium), `buildPersonaBlock()`, `resolvePersona()`
+- `process/route.ts` — fetches user persona, builds persona-aware SYSTEM_PROMPTS, tracks audioEnhancementStatus
+- `regenerate.actions.ts` — same persona injection
+- `app/dashboard/settings/page.tsx` + `PersonaSelectorClient.tsx` — persona selector UI
+- `app/actions/settings.actions.ts` — `saveAudiencePersonaAction` with plan gating
+- Settings link added to DashboardShell nav
 
-### Architecture (Board move — 2026-07-20)
-- `lib/audio/index.ts` — `enhanceAudio(buffer, mimeType, episodeId)` — only public export
-- Provider chain: Dolby → Adobe → FFmpeg (any failure falls through automatically)
-- FFmpeg is always last and cannot be disabled — guaranteed fallback
-- Add new providers by implementing `AudioProvider` interface and inserting above `ffmpegProvider` in the chain
-- Process route calls `enhanceAudio(originalBuffer, mimeType, episodeId)` — no signed URL needed
-- `lib/audio-cleanup.ts` deleted — replaced by `lib/audio/providers/dolby.ts`
-- COGS keys: `"dolby"`, `"adobe"`, `"ffmpeg"` all exist in `PRICING_USD` — provider.name maps directly
-- Adobe activated by `ADOBE_ENHANCE_API_KEY`; Dolby by `DOLBY_API_APP_KEY` + `DOLBY_API_APP_SECRET`
-- **Why:** Vendor lock-in risk (single Dolby dependency) + resilience (auto-fallback) + $0 default (FFmpeg)
+**Sprint 1 🔴 - Audio enhancement status:**
+- Episodes now track `audioEnhancementStatus` ('enhanced'|'fallback'|'skipped')
+- Episode page shows badge: Wand2 icon (enhanced), AlertCircle (fallback), SkipForward (skipped)
+- Legacy episodes: inferred from cleanedAudioStorageKey
 
-## Audio Cleanup (Dolby.io — legacy note)
-- Graceful fallback if `DOLBY_API_APP_KEY` / `DOLBY_API_APP_SECRET` not set
-- Flow: auth token → register input URL (signed GCS URL) → submit enhance job → poll → download → GCS upload
-- Cleaned audio stored at `audio/{episodeId}/cleaned.wav`; key in `episodes.cleaned_audio_storage_key`
-- Cost: $0.003/min audio (vs Auphonic $0.0072/min)
+**Sprint 1 🟠 - Completed:**
+- Share page OG tags: real `og:description` from show notes first 160 chars, `og:image`, `twitter:card: summary_large_image`
+- Homepage `BeforeAfterSection` — static before/after showing raw transcript → polished blog post
 
-## COGS Tracking
-- Table: `episode_cogs` (migration 0008); per-call, never deleted
-- Helper: `lib/cogs.ts` — `recordCogs()`, `estimateAudioCost()`, `estimateTokenCost()`
-- Admin dashboard: `/admin/cogs`
-- **Why:** gpt-5.6-luna pricing is estimated from GPT-4o rates ($2.50/1M in, $10/1M out). Update when Replit publishes exact rates.
-- Target COGS: < $0.05/episode for Pro plan ($19/mo, 10 eps = $1.90 revenue each)
+**Sprint 2 🟡 - Partially completed:**
+- `lib/pdf/episode-report.ts` — full episode PDF: cover + 4 content sections + branded footer
+- `lib/zip-export.ts` — ZIP now includes episode-report.pdf; audio downloads REMOVED (caused prod timeouts); text .md files retained for copy-paste
+- ZIP route: fetches `hidePodleverBranding` from user row before building ZIP
 
-## PDF Generation
-- Library: pdfkit (server-side, no browser dependency)
-- File: `lib/pdf/guest-pack.ts`
-- `letterSpacing` is NOT a pdfkit TextOption (caused TS error) — just omit it
-- PDF stored at `pdfs/{episodeId}/guest-pack.pdf`; served via signed GCS redirect
-- On-demand generation for legacy episodes that predate this feature
+**What remains (board priority stack):**
+- 🟡 Sprint 2: User logo upload — `logoStorageKey` column added; upload route NOT yet built
+- 🟢 Sprint 3: Voice/style calibration — column added, not populated
+- 🟢 Sprint 3: Contextual cross-promotion (social panel, guest pack footer, completion email)
+- ⚪ Backlog: Quality gate second-pass LLM
 
-## ZIP Export
-- Library: jszip
-- File: `lib/zip-export.ts`
-- Folder: `podlever-{slug}/` containing: transcript.txt, show-notes.md, blog-post.md, social-posts.md, guest-media-pack.md, original-audio.{ext}, cleaned-audio.wav, _meta.json
-- Route: `GET /api/episodes/[id]/zip`
+## Key architectural decisions
 
-## Shareable Links
-- Column: `episodes.share_token` (UUID, unique, nullable) — added in migration 0008
-- Routes: `POST /api/episodes/[id]/share-token` (generate), `DELETE ...` (revoke)
-- Public page: `/share/[token]` — shows show notes + transcript preview + viral CTA
-- OG meta tags included for social sharing cards
+**ZIP audio removal:** Audio files removed from ZIP to fix production Autoscale timeouts (30s limit). Audio is still downloadable via separate signed-URL buttons on the episode page. This is intentional — not a regression.
 
-## Asset Regeneration
-- Server Action: `app/actions/regenerate.actions.ts`
-- Limits: free=0, pro=3/episode, agency=unlimited
-- Tracked via `usage_events` with `event_type = "asset_regenerated"` (added to UsageEventType)
-- RegenerateButton client component updates textarea in-place (no page reload)
+**Persona injection pattern:** `buildPersonaBlock(persona)` prepended to base prompts as `${personaBlock}\n\n---\n\nCONTENT TYPE INSTRUCTIONS:\n${basePrompt}`. Persona block is first so it sets register before content-type instructions.
 
-## Owner Guard Extension
-- Added `plan: string` to `OwnerIdentity` — fetched alongside `sessionVersion` in one DB query
-- **Why:** avoids a second DB round-trip in every server action that needs the plan
-
-## Schema Changes (migration 0008)
-- `job_queue` table
-- `episode_cogs` table  
-- `episodes.share_token` (UUID unique nullable)
-- `episodes.cleaned_audio_storage_key` (text nullable)
-- `asset_type` enum: added `guest_media_pack_pdf`
-- `USAGE_EVENT_TYPES`: added `asset_regenerated`
-
-## New Routes Summary
-- `POST /rpc/queue/worker` — claim and process one job
-- `GET /rpc/queue/worker` — stale job recovery (cron)
-- `GET /api/episodes/[id]/zip` — bulk ZIP download
-- `GET /api/episodes/[id]/guest-pack` — PDF download
-- `POST /api/episodes/[id]/share-token` — enable sharing
-- `DELETE /api/episodes/[id]/share-token` — revoke sharing
-- `/share/[token]` — public shareable episode page
-- `/dashboard/welcome` — Founding Member welcome page
-- `/admin/cogs` — COGS admin dashboard
-
-## Outstanding
-- `DOLBY_API_APP_KEY` + `DOLBY_API_APP_SECRET` secrets NOT yet configured → audio cleanup silently skipped
-- `FOUNDING_MEMBER_DISCORD_URL` env var not set → Discord section shows placeholder
-- Stripe products still unverified for `metadata.plan_slug` → checkout may fall back to mailto
+**Why:** The ZIP was consistently failing in production because downloading 25-50MB audio from GCS inline during the request exceeded Next.js Autoscale's function timeout.

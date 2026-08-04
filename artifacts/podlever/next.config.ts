@@ -23,26 +23,33 @@ import type { NextConfig } from "next";
  * SECURITY_HEADERS — OWASP Secure Headers baseline (2026-07-27).
  *
  * CSP notes:
- * - No third-party scripts/fonts exist in the app (verified via repo grep),
- *   so script-src stays first-party. Next.js requires 'unsafe-inline' for its
- *   inline bootstrap scripts (nonce-based CSP is a future hardening step).
+ * - script-src adds 'unsafe-eval' in development only (required by Next.js
+ *   HMR and the Replit preview bridge; not shipped to production).
+ * - Stripe.js (checkout, portal) requires https://js.stripe.com in script-src,
+ *   https://api.stripe.com in connect-src, and https://*.stripe.com in frame-src.
  * - storage.googleapis.com is allowed for connect-src (direct browser uploads
  *   via GCS signed URLs) and img/media-src (episode audio playback).
  * - frame-ancestors 'none' replaces X-Frame-Options (still sent for legacy).
- * - If a future feature embeds an external script (analytics, Stripe.js),
- *   its origin MUST be added here or the feature silently breaks.
+ * - HUMAN REVIEW: If a future feature embeds an external script, its origin
+ *   MUST be added here or the feature silently breaks with a CSP error.
  */
+const isDev = process.env.NODE_ENV !== "production";
+
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // 'unsafe-eval' required in dev for Next.js HMR and Replit preview bridge.
+  // Stripe.js requires its own origin.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://js.stripe.com`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://storage.googleapis.com",
+  "img-src 'self' data: blob: https://storage.googleapis.com https://*.stripe.com",
   "media-src 'self' blob: https://storage.googleapis.com",
-  "connect-src 'self' https://storage.googleapis.com",
+  "connect-src 'self' https://storage.googleapis.com https://api.stripe.com",
   "font-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  // Stripe Checkout/Portal embeds in iframes from stripe.com subdomains.
+  "frame-src https://*.stripe.com",
+  "form-action 'self' https://*.stripe.com",
   "frame-ancestors 'none'",
   "upgrade-insecure-requests",
 ].join("; ");
