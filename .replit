@@ -32,3 +32,6 @@ channel = "stable-25_05"
 [userenv.production]
 OIDC_CALLBACK_URL = "https://podlever.com/auth/callback"
 OWNER_REPLIT_USER_ID = "19531679"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-9cdf4391-1a8d-4eef-915c-6c7c4685ab5f"
